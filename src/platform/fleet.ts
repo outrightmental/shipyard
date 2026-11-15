@@ -304,8 +304,12 @@ export async function refreshConfigVersion(p: Platform, memberId: string): Promi
   return configVersion;
 }
 
-/** What a member is told to be. `githubReady`: whether Shipyard can mint it a GitHub token. */
-export async function memberConfig(p: Platform, member: MemberRow, githubReady: boolean): Promise<MemberConfig> {
+/** What a member is told to be. `github`: whether Shipyard can mint it a GitHub token, and who its commits are by. */
+export async function memberConfig(
+  p: Platform,
+  member: MemberRow,
+  github: { ready: boolean; git: { name: string; email: string } | null },
+): Promise<MemberConfig> {
   const repos = (await listRepoRows(p)).filter((repo) => repo.memberId === member.id);
   return {
     member: { id: member.id, name: member.name },
@@ -313,7 +317,8 @@ export async function memberConfig(p: Platform, member: MemberRow, githubReady: 
     configVersion: configVersionOf(member, repos),
     maxConcurrency: member.maxConcurrency,
     repos: repos.sort((a, b) => (a.repo < b.repo ? -1 : 1)).map((repo) => ({ repo: repo.repo, ...(repo.settings ?? {}) })),
-    github: { ready: githubReady },
+    github: { ready: github.ready },
+    git: github.git,
     wsUrl: p.settings.publicWs,
   };
 }

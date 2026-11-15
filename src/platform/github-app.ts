@@ -71,6 +71,8 @@ interface AppRow extends Row {
   installationUrl: string | null;
   connectedAt: string;
   connectedBy: string | null;
+  /** The id of the app's bot user, which is not the app's id: what GitHub attributes its commits by. */
+  botUserId?: number | null;
 }
 
 interface AppSecrets {
@@ -130,6 +132,34 @@ export async function githubStatus(p: Platform): Promise<GitHubStatus> {
 export async function githubReady(p: Platform): Promise<boolean> {
   const row = await appRow(p);
   return row !== null && row.installationId !== null && row.installationId !== undefined;
+}
+
+/**
+ * What a fleet member is told of GitHub: whether a token can be minted for
+ * it, and who its commits are by. The app's bot user, `<slug>[bot]`, with the
+ * no-reply address GitHub links to it — which carries the bot's user id when
+ * that is known, as GitHub's own does.
+ */
+export async function githubForMembers(p: Platform): Promise<{ ready: boolean; git: { name: string; email: string } | null }> {
+  const row = await appRow(p);
+  if (!row) return { ready: false, git: null };
+  const name = `${row.slug}[bot]`;
+  const email = typeof row.botUserId === "number"
+    ? `${row.botUserId}+${name}@users.noreply.github.com`
+    : `${name}@users.noreply.github.com`;
+  return { ready: row.installationId !== null && row.installationId !== undefined, git: { name, email } };
+}
+
+/** The id of the app's bot user, asked of GitHub's public API; null when it cannot be had. */
+async function botUserId(p: Platform, slug: string): Promise<number | null> {
+  try {
+    const res = await p.fetch(`${GITHUB_API}/users/${encodeURIComponent(`${slug}[bot]`)}`, { headers: githubHeaders() });
+    if (!res.ok) return null;
+    const user = await res.json() as { id?: unknown };
+    return typeof user.id === "number" ? user.id : null;
+  } catch {
+    return null;
+  }
 }
 
 // ── Connecting: the manifest flow ────────────────────────────────────────────
@@ -216,6 +246,7 @@ export async function completeManifest(p: Platform, input: { code?: unknown; sta
     installationUrl: null,
     connectedAt: iso(p.now()),
     connectedBy: by,
+    botUserId: await botUserId(p, app.slug),
   };
   await p.table.put(row);
   await p.table.delete(CONFIG, PENDING);

@@ -140,6 +140,7 @@ test("hello answers with the member's configuration, and its version moves when 
   assert.equal(config.maxConcurrency, 3);
   assert.deepEqual(config.repos, []);
   assert.equal(config.github.ready, false);
+  assert.equal(config.git, null, "no app yet, so no one for its commits to be by");
   assert.equal(config.wsUrl, "wss://ws.shipyard.test");
   assert.equal(config.release, t.p.settings.release);
 
@@ -555,6 +556,7 @@ function fakeGithub(t: ReturnType<typeof testPlatform>, options: { installed?: b
         client_id: "Iv1.abc", client_secret: "client-secret", webhook_secret: "hook-secret", pem: APP_PEM, owner: { login: "acme" },
       }), { status: 201 });
     }
+    if (url.endsWith("/users/shipyard-acme%5Bbot%5D")) return { id: 777, login: "shipyard-acme[bot]" };
     if (url.includes("/app/installations?")) {
       return options.installed === false ? [] : [{ id: 99, account: { login: "acme" }, repository_selection: "selected", html_url: "https://github.com/organizations/acme/settings/installations/99" }];
     }
@@ -695,7 +697,10 @@ test("a member is minted a token for the repositories assigned to it, and no oth
   assert.equal(res.body["expiresAt"], "2026-11-15T13:00:00Z");
   assert.deepEqual(res.body["repos"], ["acme/Gadgets", "acme/widgets"]);
   assert.deepEqual(minted, [{ repositories: ["Gadgets", "widgets"] }]);
-  assert.equal((await configOf(t, atlas.token)).github.ready, true);
+  const config = await configOf(t, atlas.token);
+  assert.equal(config.github.ready, true);
+  // Its commits are the app's own: the bot user, by the no-reply address GitHub links to it.
+  assert.deepEqual(config.git, { name: "shipyard-acme[bot]", email: "777+shipyard-acme[bot]@users.noreply.github.com" });
 });
 
 test("a repository the app is not installed on is said, not passed over", async () => {

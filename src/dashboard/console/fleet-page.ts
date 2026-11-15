@@ -2,6 +2,7 @@ import { LitElement, html, nothing } from 'lit';
 import { memberOnline, type FleetMember } from '../../shared/protocol.js';
 import { sameCommit, shortCommit } from '../../shared/release.js';
 import { formatDuration } from '../shared/format.js';
+import { systemView } from '../shared/system-view.js';
 import { usageGaugeView, usageLimitUntilMs } from '../shared/usage-gauge.js';
 import { liveHold } from '../shared/vitals.js';
 import { errorLine, type Api } from './api.js';
@@ -178,6 +179,8 @@ export class ShipyardFleet extends LitElement {
     // As the member's heading on the dashboard reads it: LIMIT while its usage limit holds its pool.
     const gauge = usageGaugeView(crew?.usage ?? null, nowMs, usageLimitUntilMs(liveHold(crew?.hold ?? null, nowMs)));
     const host = member.host;
+    // Its machine as last measured, as its heading on the dashboard reads it: not said of a member that is away.
+    const system = crew?.online && crew.system ? systemView(crew.system) : null;
     const busy = this._busy?.endsWith(`:${member.id}`) ?? false;
     return html`
       <article class="console-card console-member is-${standing.tone}" aria-busy="${busy ? 'true' : 'false'}">
@@ -226,6 +229,12 @@ export class ShipyardFleet extends LitElement {
           <div>
             <dt>Machine</dt>
             <dd>${host ? html`${host.hostname || 'unnamed'} <span class="console-faint">${[host.platform, host.arch, host.cpus ? `${host.cpus} cpus` : '', host.node ? `node ${host.node}` : ''].filter(Boolean).join(' · ')}</span>` : html`<span class="console-faint">not said yet</span>`}</dd>
+          </div>
+          <div>
+            <dt>Performance</dt>
+            <dd>${system
+              ? system.gauges.map((gauge) => html`<span class="console-reading is-${gauge.tone}" title="${gauge.detail}"><span>${gauge.label}</span>${gauge.value}</span>`)
+              : html`<span class="console-faint">${crew?.online ? 'not measured yet' : 'not measured while it is away'}</span>`}</dd>
           </div>
           <div>
             <dt>Commit</dt>

@@ -1,3 +1,4 @@
+import type { SystemReading } from '../../shared/system.js';
 import type { PillActivity } from '../shared/pill-activity.js';
 
 export interface CylinderState {
@@ -164,6 +165,8 @@ export interface FleetCrew {
   lastSeenAtMs: number | null;
   /** The latest reading of its Claude account's usage, or null before the first. */
   usage: AccountUsage | null;
+  /** The latest reading of the machine it runs on (src/shared/system.ts), or null before the first. */
+  system: SystemReading | null;
   /** The hold parking its pool, or null. */
   hold: WorkHold | null;
   /** Its process is finishing what is in flight and stopping — to update itself, usually. */
@@ -338,6 +341,9 @@ export interface DashboardState {
   usage: AccountUsage | null;
   /** Latest reading of the checkout disk's free space, or null until the first. */
   disk: DiskSpace | null;
+  /** Latest reading of the machine this pool runs on, when it is a fleet member's
+   *  (src/shared/system.ts); null until the first, and on a pool that is not one. */
+  system: SystemReading | null;
   /** Each PR's latest dashboard approval (#276), keyed like the pill's
    *  `approveKey` ("owner/repo#n"). Outcomes drop out once they are stale. */
   approvals: Map<string, PullRequestApprovalStatus>;

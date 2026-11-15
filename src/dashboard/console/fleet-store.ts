@@ -312,8 +312,8 @@ export class FleetStore implements DashboardSource {
 
   /**
    * A member started again: what its last process was doing is gone with it.
-   * Its work is as it was, and so is the last reading of its account's usage,
-   * the operator's own presses, and the failures heard of.
+   * Its work is as it was, and so are the last readings of its account's usage
+   * and of its machine, the operator's own presses, and the failures heard of.
    */
   private _resetProcess(memberId: string): void {
     const was = this._states.get(memberId);
@@ -329,6 +329,7 @@ export class FleetStore implements DashboardSource {
       sessionCountByRepo: was.sessionCountByRepo,
       sessionCount: was.sessionCount,
       usage: was.usage,
+      system: was.system,
       approvalPresses: was.approvalPresses,
       failures: was.failures,
       eventStream: was.eventStream,

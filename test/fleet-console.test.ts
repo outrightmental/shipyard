@@ -22,11 +22,14 @@ import { noticeCounts, pageOf } from "../src/dashboard/console/shipyard-app.js";
 import { hitTest, layoutField, type HeaderNode } from "../src/dashboard/field/layout.js";
 import { fieldModel } from "../src/dashboard/field/model.js";
 import { buildInbox, inspect, READ_ONLY_HINT } from "../src/dashboard/shared/inbox.js";
+import { formatUptime, systemView, worstTone } from "../src/dashboard/shared/system-view.js";
 import { workViews } from "../src/dashboard/shared/work-view.js";
 import { dashboardReducer, DashboardStore, FAILURE_SHOW_MS, initialState, replayState } from "../src/dashboard/store/dashboard-store.js";
 import type { DashboardState, LifecyclePair } from "../src/dashboard/store/types.js";
 import { fleetNotices } from "../src/shared/notices.js";
 import { CENTRAL_MEMBER_ID, type ConsoleState, type FleetMember, type GitHubStatus, type SubscribedRepo } from "../src/shared/protocol.js";
+import { isProcessKey, replayOp } from "../src/shared/replay-cache.js";
+import { systemReadingOf } from "../src/shared/system.js";
 import { click, findTemplates, flatten, makeEvent, paintField, stateWith, tokensPalette, triplet } from "./dashboard-helpers.js";
 
 // The console (#3): Shipyard's dashboard as the sum of its fleet's, the
@@ -515,17 +518,20 @@ test("the console's store reads the fleet, then follows every member's events do
   socket.push({ t: "events", member: "m_a", events: [
     makeEvent("action-start", { actionIndex: 1, totalActions: 1, type: "self-review", repo: "acme/widgets", issueNumber: 7, pullRequestNumber: 12 }),
     makeEvent("usage-update", { status: "ok", window: "seven_day", usedPercent: 12, fetchedAtMs: Date.now() }),
+    makeEvent("system-update", machineReading({ cpu: 64 })),
   ] });
   sum = store.getState();
   assert.equal(sum.cylinders[0]?.status, "active");
   assert.equal(sum.fleet?.[0]?.usage?.usedPercent, 12);
+  assert.equal(sum.fleet?.[0]?.system?.cpu.percent, 64);
 
-  // The member started again: its engines forget, its work and its usage do not.
+  // The member started again: its engines forget; its work, its usage and its machine do not.
   socket.push({ t: "member-reset", member: "m_a" });
   sum = store.getState();
   assert.equal(sum.cylinders[0]?.status, "idle");
   assert.equal(sum.lastLifecyclePairs.length, 1);
   assert.equal(sum.fleet?.[0]?.usage?.usedPercent, 12);
+  assert.equal(sum.fleet?.[0]?.system?.cpu.percent, 64);
 });
 
 test("an Approve press in the console goes up the socket, and is followed with the member whose repository it is", async (t) => {
@@ -603,6 +609,182 @@ test("the repositories listed are the ones the app can see and the ones subscrib
     ["acme/Alpha", false, true],
     ["acme/zeta", false, true],
   ]);
+});
+
+// ── The machines ─────────────────────────────────────────────────────────────
+
+const GB = 2 ** 30;
+
+/** What a member reports of its machine: eight cores, 32 GB, half a terabyte, all of it in hand unless said. */
+function machineReading(of: {
+  cpu?: number | null; busiest?: number | null; load?: [number, number, number] | null;
+  used?: number; free?: number; platformMs?: number | null; lagMs?: number;
+} = {}): Record<string, unknown> {
+  const o = { cpu: 37, busiest: 80, load: [2.1, 1.8, 1.5], used: 0.5, free: 0.5, platformMs: 48, lagMs: 3, ...of };
+  return {
+    atMs: NOW,
+    cpu: { percent: o.cpu, busiestPercent: o.busiest, cores: 8, load: o.load },
+    memory: { usedBytes: 32 * GB * o.used, totalBytes: 32 * GB },
+    disk: { freeBytes: 500 * GB * o.free, totalBytes: 500 * GB },
+    process: { rssBytes: 0.25 * GB, loopLagMs: o.lagMs, uptimeSeconds: 3 * 3600 },
+    platformMs: o.platformMs,
+    uptimeSeconds: 2 * 86_400 + 5 * 3600,
+  };
+}
+
+test("a member's machine is the latest it reported, kept across a restart, and what is not a reading is not taken", () => {
+  let state = dashboardReducer(initialState(), stamped("system-update", machineReading()));
+  assert.equal(state.system?.cpu.percent, 37);
+  assert.deepEqual(state.system?.cpu.load, [2.1, 1.8, 1.5]);
+  assert.equal(state.system?.memory.totalBytes, 32 * GB);
+  assert.equal(state.eventStream.length, 0, "a reading is not a line of the log");
+
+  // Another machine on another commit: what it sends is drawn only so far as it makes sense.
+  state = dashboardReducer(state, stamped("system-update", { atMs: NOW, cpu: "busy" }));
+  assert.equal(state.system?.cpu.percent, 37, "something that is not a reading leaves the last one standing");
+  const odd = systemReadingOf({
+    ...machineReading({ cpu: 150, busiest: -4, load: [1, 2] as unknown as [number, number, number], platformMs: -1 }),
+    disk: { freeBytes: 9 * GB, totalBytes: 0 },
+    memory: { usedBytes: 40 * GB, totalBytes: 32 * GB },
+  });
+  assert.deepEqual([odd?.cpu.percent, odd?.cpu.busiestPercent, odd?.cpu.load, odd?.disk, odd?.platformMs], [100, 0, null, null, null]);
+  assert.equal(odd?.memory.usedBytes, 32 * GB, "no more in use than there is");
+  assert.equal(systemReadingOf(null), null);
+  assert.equal(systemReadingOf({ atMs: NOW }), null);
+
+  // Kept like the last usage reading: one to a member, and still true while its process starts again.
+  const event = stamped("system-update", machineReading());
+  assert.deepEqual(replayOp(event), { set: "system-update" });
+  assert.equal(isProcessKey("system-update"), false);
+});
+
+test("each gauge says what its machine is doing, and is coloured only when it is the thing to look at", () => {
+  const easy = systemView(systemReadingOf(machineReading())!);
+  assert.deepEqual(easy.gauges.map((gauge) => [gauge.key, gauge.label, gauge.value, gauge.tone]), [
+    ["cpu", "CPU", "37%", "ok"],
+    ["memory", "MEM", "50%", "ok"],
+    ["disk", "DISK", "250 GB", "ok"],
+    ["load", "LOAD", "2.1", "ok"],
+    ["network", "NET", "48 MS", "ok"],
+    ["lag", "LAG", "3 MS", "ok"],
+    ["uptime", "UP", "2D 5H", "ok"],
+  ]);
+  assert.equal(worstTone(easy), "ok");
+  // A bar for what is a share of something, and for nothing else; the disk's fills as it does.
+  assert.deepEqual(easy.gauges.map((gauge) => gauge.fillPercent), [37, 50, 50, null, null, null, null]);
+  assert.deepEqual(easy.gauges.map((gauge) => gauge.detail), [
+    "Processor: 37% of 8 cores busy, the busiest at 80%",
+    "Memory: 16 GB of 32 GB in use (50%)",
+    "Disk: 250 GB free of 500 GB where its checkouts are kept (50% used)",
+    "Load: 2.1 ready to run over the last minute, 1.8 over five, 1.5 over fifteen, on 8 cores",
+    "Network: Shipyard answered its last report in 48 ms",
+    "Its own process: running 3 ms late at worst, holding 256 MB, up 3h 0m",
+    "The machine has been up 2d 5h",
+  ]);
+
+  // A machine working hard is a fleet member doing its job: the marks are late.
+  const busy = systemView(systemReadingOf(machineReading({ cpu: 88, used: 0.8, free: 0.12, load: [9, 9, 9] }))!);
+  assert.equal(worstTone(busy), "ok");
+
+  const struggling = systemView(systemReadingOf(machineReading({
+    cpu: 99, used: 0.9, free: 0.03, load: [16, 12, 9], platformMs: 9_000, lagMs: 300,
+  }))!);
+  assert.deepEqual(struggling.gauges.map((gauge) => [gauge.key, gauge.value, gauge.tone]), [
+    ["cpu", "99%", "critical"],
+    ["memory", "90%", "warn"],
+    ["disk", "15 GB", "critical"],
+    ["load", "16", "warn"],
+    ["network", "9.0 S", "critical"],
+    ["lag", "300 MS", "warn"],
+    ["uptime", "2D 5H", "ok"],
+  ]);
+  assert.equal(worstTone(struggling), "critical");
+
+  // A first reading has no processor use yet; Windows keeps no load average; a member yet to hear back has no distance.
+  const first = systemView(systemReadingOf(machineReading({ cpu: null, busiest: null, load: null, platformMs: null }))!);
+  assert.deepEqual(first.gauges.map((gauge) => gauge.key), ["cpu", "memory", "disk", "lag", "uptime"]);
+  assert.deepEqual([first.gauges[0]?.value, first.gauges[0]?.fillPercent, first.gauges[0]?.tone], ["—", null, "ok"]);
+
+  assert.deepEqual([formatUptime(59), formatUptime(42 * 60), formatUptime(5 * 3600 + 12 * 60), formatUptime(3 * 86_400 + 4 * 3600)],
+    ["0m", "42m", "5h 12m", "3d 4h"]);
+});
+
+test("each member's heading reads its machine, in columns the whole fleet shares", () => {
+  const measured = (repo: string, engines: number, reading: Record<string, unknown>, options: { usedPercent?: number } = {}) =>
+    dashboardReducer(memberState(repo, engines, options), stamped("system-update", reading));
+  const states = new Map([
+    ["m_a", measured("acme/widgets", 2, machineReading())],
+    // A Windows machine, which keeps no load average, and is short of everything else.
+    ["m_b", measured("acme/gadgets", 3, machineReading({ cpu: 99, used: 0.9, free: 0.03, load: null, platformMs: 312 }), { usedPercent: 93 })],
+  ]);
+  const { sum } = twoMembers({ states });
+  assert.deepEqual(sum.fleet?.map((crew) => [crew.name, crew.system?.cpu.percent]), [["atlas", 37], ["borealis", 99]]);
+
+  const painted = paintField(sum, { nowMs: NOW, viewport: { width: 2000, height: 1000 } });
+  assert.deepEqual(painted.model.crews?.map((crew) => crew.system?.gauges.map((gauge) => gauge.key).join(" ")), [
+    "cpu memory disk load network lag uptime",
+    "cpu memory disk network lag uptime",
+  ]);
+
+  /** Where a word was drawn along the line, each time it was. */
+  const xs = (text: string): number[] => painted.calls
+    .filter((call) => call.method === "fillText" && call.args[0] === text)
+    .map((call) => Number(call.args[1]));
+  for (const label of ["CPU", "MEM", "DISK", "NET", "LAG", "UP"]) {
+    const [atlas, borealis, ...more] = xs(label);
+    assert.equal(more.length, 0, `${label} is drawn once for each member`);
+    assert.ok(atlas !== undefined && atlas === borealis, `${label} is in one column down the dashboard (${String(atlas)}, ${String(borealis)})`);
+  }
+  // The machine with no load average leaves that column empty rather than closing up.
+  assert.equal(xs("LOAD").length, 1);
+  assert.ok(xs("LOAD")[0]! > xs("DISK")[0]! && xs("LOAD")[0]! < xs("NET")[0]!);
+  // Left to right in the order they are kept, after everything else the heading says.
+  const order = ["CPU", "MEM", "DISK", "LOAD", "NET", "LAG", "UP"].map((label) => xs(label)[0]!);
+  assert.deepEqual([...order].sort((a, b) => a - b), order);
+  assert.ok(order[0]! > xs("CLAUDE 5H 41%")[0]!);
+
+  // Trim while it is in hand; a signal only for what is the thing to look at.
+  const palette = tokensPalette();
+  assert.equal(painted.inkOf("37%")?.rgb, triplet(palette.trim));
+  assert.equal(painted.inkOf("99%")?.rgb, triplet(palette.red));
+  assert.equal(painted.inkOf("90%")?.rgb, triplet(palette.yellow));
+  assert.equal(painted.inkOf("15 GB")?.rgb, triplet(palette.red));
+  assert.equal(painted.inkOf("312 MS")?.rgb, triplet(palette.trim));
+
+  // With less room every heading keeps the same gauges, the most telling, and still in one column.
+  const narrow = paintField(sum, { nowMs: NOW, viewport: { width: 1150, height: 1000 } });
+  const kept = ["CPU", "MEM", "DISK", "LOAD", "NET", "LAG", "UP"].filter((label) => narrow.texts.includes(label));
+  assert.ok(kept.length >= 1 && kept.length < 7, `some are kept and some are not (${kept.join(" ")})`);
+  assert.deepEqual(kept, ["CPU", "MEM", "DISK", "LOAD", "NET", "LAG", "UP"].slice(0, kept.length), "dropped from the end");
+  for (const label of kept.filter((label) => label !== "LOAD")) {
+    assert.equal(narrow.texts.filter((text) => text === label).length, 2, `${label} is kept for both members or for neither`);
+  }
+  // The line on how each member is doing is still there.
+  assert.equal(narrow.texts.filter((text) => text === "an engine is running an action").length, 2);
+
+  // Clicking a heading says all of it, where the heading had room for some.
+  const said = inspect({ kind: "crew", id: "m_a" }, {
+    works: [], engines: [], usageHeading: "", usageTitle: "", hold: null, crews: painted.model.crews,
+  });
+  assert.ok(said?.body.includes("Processor: 37% of 8 cores busy, the busiest at 80%."));
+  assert.ok(said?.body.includes("The machine has been up 2d 5h."));
+});
+
+test("a member that is not there says nothing of its machine: what it was doing is not what it is doing", () => {
+  const states = new Map([
+    ["m_a", dashboardReducer(memberState("acme/widgets", 2), stamped("system-update", machineReading()))],
+    ["m_b", dashboardReducer(memberState("acme/gadgets", 3), stamped("system-update", machineReading({ cpu: 99 })))],
+  ]);
+  const { sum } = twoMembers({ states, borealis: { lastSeenAt: at(-20 * 60_000), connected: false } });
+  const painted = paintField(sum, { nowMs: NOW, viewport: { width: 2000, height: 1000 } });
+  assert.deepEqual(painted.model.crews?.map((crew) => [crew.name, crew.online, crew.system !== null]), [
+    ["atlas", true, true], ["borealis", false, false],
+  ]);
+  assert.equal(painted.texts.filter((text) => text === "CPU").length, 1);
+  assert.ok(!painted.texts.includes("99%"));
+  // And one that has not reported yet has no gauges, and nothing is drawn in their place.
+  const before = paintField(twoMembers().sum, { nowMs: NOW, viewport: { width: 2000, height: 1000 } });
+  assert.ok(!before.texts.includes("CPU"));
 });
 
 // The Repositories page is never drawn empty to be filled in later: what the

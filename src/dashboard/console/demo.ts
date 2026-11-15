@@ -72,6 +72,20 @@ function pool(engines: number): DashboardState {
   return state;
 }
 
+/** A reading of a made-up machine: twelve cores, 36 GB, a terabyte of disk. */
+function machine(of: { cpu: number; busiest: number; load: [number, number, number]; memoryUsed: number; diskFree: number; platformMs: number; lagMs: number }): Record<string, unknown> {
+  const GB = 2 ** 30;
+  return {
+    atMs: now,
+    cpu: { percent: of.cpu, busiestPercent: of.busiest, cores: 12, load: of.load },
+    memory: { usedBytes: 36 * GB * of.memoryUsed, totalBytes: 36 * GB },
+    disk: { freeBytes: 994 * GB * of.diskFree, totalBytes: 994 * GB },
+    process: { rssBytes: 0.21 * GB, loopLagMs: of.lagMs, uptimeSeconds: 5.2 * 3600 },
+    platformMs: of.platformMs,
+    uptimeSeconds: 3.4 * 86_400,
+  };
+}
+
 function atlas(): DashboardState {
   let state = pool(4);
   state = dashboardReducer(state, event('lifecycle-update', { repo: 'acme/atlas-api', pairs: [
@@ -95,6 +109,7 @@ function atlas(): DashboardState {
     issueTitle: 'Keep the filter bar in view while the table scrolls', model: 'claude-fable-5-2', startedAt: now - 47 * 60_000,
   }));
   state = dashboardReducer(state, event('usage-update', { status: 'ok', window: 'five_hour', usedPercent: 38, resetsAtMs: now + 2.4 * 3_600_000, fetchedAtMs: now }));
+  state = dashboardReducer(state, event('system-update', machine({ cpu: 41, busiest: 96, load: [4.9, 4.2, 3.1], memoryUsed: 0.58, diskFree: 0.46, platformMs: 46, lagMs: 3 })));
   return state;
 }
 
@@ -107,6 +122,7 @@ function borealis(): DashboardState {
   ] }));
   state = dashboardReducer(state, event('work-hold', { kind: 'claude-usage-limit', reason: 'Claude usage limit', untilMs: now + 96 * 60_000 }));
   state = dashboardReducer(state, event('usage-update', { status: 'ok', window: 'seven_day', usedPercent: 100, resetsAtMs: now + 96 * 60_000, fetchedAtMs: now }));
+  state = dashboardReducer(state, event('system-update', machine({ cpu: 93, busiest: 100, load: [19.4, 17.8, 12.2], memoryUsed: 0.91, diskFree: 0.03, platformMs: 312, lagMs: 140 })));
   return state;
 }
 

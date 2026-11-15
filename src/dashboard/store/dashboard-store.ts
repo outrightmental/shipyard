@@ -4,6 +4,7 @@ import { formatBytes, formatClockTime, formatDuration, localizeClockTimes } from
 import { freezePillActivity, pillsDark } from '../shared/pill-activity.js';
 import { approvalStatusExpired, approveKey, approveRequestMessage, isApprovalOutcome, type ApproveTarget } from '../shared/pill-approval.js';
 import { FAILURE_SHOW_MS } from '../shared/failures.js';
+import { systemReadingOf } from '../../shared/system.js';
 import { WsClient } from './ws-client.js';
 
 export type { DashboardState };
@@ -128,6 +129,7 @@ export function initialState(): DashboardState {
     hold: null,
     usage: null,
     disk: null,
+    system: null,
     approvals: new Map(),
     approvalPresses: new Map(),
     failures: new Map(),
@@ -173,6 +175,11 @@ export function dashboardReducer(state: DashboardState, event: DashboardEvent): 
     case 'work-hold-cleared': return applyWorkHoldCleared(state, atMs);
     case 'usage-update':      return applyUsageUpdate(state, event.data);
     case 'disk-space':        return applyDiskSpace(state, event.data, atMs);
+    // A fleet member's machine, measured. One that is not a reading leaves the last one standing.
+    case 'system-update': {
+      const system = systemReadingOf(event.data);
+      return system ? { ...state, system } : state;
+    }
     // An Approve click relayed to the engine pool, which answers it with
     // `pull-request-approval` events (#276).
     case 'pull-request-approve': return state;

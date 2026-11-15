@@ -523,6 +523,7 @@ export class YokeField extends LitElement {
         ` : model.crews.map((crew) => html`
           <h2 data-node="header:member:${crew.id}">${crew.name}: ${crew.burning} of ${crew.engines} engines burning</h2>
           <p>${crew.note.text}. ${crew.usage.title}.</p>
+          ${crew.system ? html`<p class="field-mirror-system">${crew.system.gauges.map((gauge) => `${gauge.detail}. `)}</p>` : ''}
           <ul>${[...crew.reactors.map((reactor) => reactor.engine), ...crew.bench]
             .sort((a, b) => a.index - b.index)
             .map((engine) => this._engineItem(engine, true))}</ul>

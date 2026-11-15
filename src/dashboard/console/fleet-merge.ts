@@ -111,6 +111,7 @@ export function sumFleet(input: FleetSum): DashboardState {
       online,
       lastSeenAtMs: lastSeenAtMs !== null && Number.isFinite(lastSeenAtMs) ? lastSeenAtMs : null,
       usage: state?.usage ?? null,
+      system: state?.system ?? null,
       hold: state?.hold ?? null,
       stopping: state?.shutdownRequested ?? false,
       stopped: state?.appShutdown ?? false,

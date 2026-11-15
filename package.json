@@ -16,7 +16,9 @@
     "test": "node --import tsx --test --test-force-exit \"test/**/*.test.ts\"",
     "build:lambda": "node tools/build-lambda.mjs",
     "build:console": "node tools/build-console.mjs",
-    "demo:console": "node tools/console-demo.mjs"
+    "demo:console": "node tools/console-demo.mjs",
+    "enroll": "tsx tools/enroll.ts",
+    "fleet": "node tools/fleet-runner.mjs"
   },
   "repository": {
     "type": "git",

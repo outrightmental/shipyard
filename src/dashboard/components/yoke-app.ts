@@ -1,5 +1,5 @@
 import { LitElement, html } from 'lit';
-import { FAILURE_SHOW_MS, type DashboardState, type DashboardStore } from '../store/dashboard-store.js';
+import { FAILURE_SHOW_MS, type DashboardState } from '../store/dashboard-store.js';
 import type { Point } from '../field/geometry.js';
 import { fieldModel } from '../field/model.js';
 import { inboxWithLedger, inspect, InboxLedger, type Selection } from '../shared/inbox.js';
@@ -12,6 +12,18 @@ import './activity-drawer.js';
 import './keep-awake-light.js';
 import './yoke-field.js';
 import './yoke-inbox.js';
+
+/**
+ * What the dashboard needs of a store: its state, to be told when it changes,
+ * and somewhere to send an Approve press. A pool's own store
+ * (store/dashboard-store.ts) is one; so is Shipyard's, which is the sum of
+ * every fleet member's (console/fleet-store.ts).
+ */
+export interface DashboardSource {
+  getState(): DashboardState;
+  subscribe(listener: (state: DashboardState) => void): () => void;
+  approvePullRequest(target: ApproveTarget): boolean;
+}
 
 /** No card to draw a line to: the inbox is folded away. */
 const NO_ANCHORS: ReadonlyMap<string, Point> = new Map();
@@ -37,9 +49,10 @@ export class YokeApp extends LitElement {
     _viewportWidth: { attribute: false, state: true },
   };
 
-  store: DashboardStore | null = null;
+  store: DashboardSource | null = null;
   private _state: DashboardState | null = null;
   private _unsub: (() => void) | null = null;
+  private _resizeObserver: ResizeObserver | null = null;
 
   /** What was tapped on the field, to say more about. */
   private _selection: Selection | null = null;
@@ -55,7 +68,14 @@ export class YokeApp extends LitElement {
   private _baseTitle: string | null = null;
   private _waiting = 0;
 
-  private readonly _onResize = () => { this._viewportWidth = window.innerWidth; };
+  /**
+   * The width the dashboard has, which is its own: the whole window when it
+   * is the page, and what is left beside the menu inside Shipyard's console.
+   */
+  private readonly _onResize = () => {
+    const width = Math.round(this.getBoundingClientRect().width);
+    this._viewportWidth = width > 0 ? width : window.innerWidth;
+  };
   private readonly _onKeyDown = (event: KeyboardEvent) => {
     if (event.key !== 'Escape') return;
     if (this._logOpen) this._logOpen = false;
@@ -78,12 +98,19 @@ export class YokeApp extends LitElement {
     }
     window.addEventListener('resize', this._onResize);
     window.addEventListener('keydown', this._onKeyDown);
+    if (typeof ResizeObserver !== 'undefined') {
+      this._resizeObserver = new ResizeObserver(this._onResize);
+      this._resizeObserver.observe(this);
+    }
+    this._onResize();
   }
 
   override disconnectedCallback() {
     super.disconnectedCallback();
     this._unsub?.();
     this._unsub = null;
+    this._resizeObserver?.disconnect();
+    this._resizeObserver = null;
     window.removeEventListener('resize', this._onResize);
     window.removeEventListener('keydown', this._onKeyDown);
   }
@@ -118,6 +145,27 @@ export class YokeApp extends LitElement {
     this.querySelector<KeepAwakeLight>('keep-awake-light')?.resume();
   }
 
+  /**
+   * The inbox says where its cards are in the window's coordinates; the field
+   * draws in its own, which are the window's only when the dashboard is the
+   * whole page.
+   */
+  private _onAnchors(event: CustomEvent<Map<string, Point>>) {
+    const box = this.getBoundingClientRect();
+    if (box.left === 0 && box.top === 0) {
+      this._anchors = event.detail;
+      return;
+    }
+    const local = new Map<string, Point>();
+    for (const [id, point] of event.detail) local.set(id, { x: point.x - box.left, y: point.y - box.top });
+    this._anchors = local;
+  }
+
+  /** A card's button that goes to a page of the console: the console's to act on. */
+  private _onNavigate(event: CustomEvent<string>) {
+    this.dispatchEvent(new CustomEvent<string>('dashboard-navigate', { detail: event.detail, bubbles: true, composed: true }));
+  }
+
   override render() {
     const s = this._state;
     if (!s) return html``;
@@ -129,6 +177,8 @@ export class YokeApp extends LitElement {
       failures: [...s.failures.values()],
       keepAwake: this._keepAwake,
       disk: s.disk,
+      notices: s.notices,
+      readOnly: s.readOnly,
       dismissed: this._dismissed,
       nowMs,
       failureShowMs: FAILURE_SHOW_MS,
@@ -148,6 +198,7 @@ export class YokeApp extends LitElement {
       usageHeading: model.vitals.usage.heading,
       usageTitle: model.vitals.usage.title,
       hold: model.vitals.hold,
+      crews: model.crews,
     });
 
     const rail = railLayout(this._viewportWidth, cards.length > 0 || inspection !== null, this._pinnedOpen);
@@ -158,14 +209,14 @@ export class YokeApp extends LitElement {
         <yoke-field
           .model=${model}
           .railWidth=${rail.reserved}
-          .lampWidth=${lampReserve(this._viewportWidth)}
+          .lampWidth=${s.fleet === null ? lampReserve(this._viewportWidth) : 0}
           .anchors=${rail.open ? this._anchors : NO_ANCHORS}
           @field-select=${this._onSelect}
           @field-log=${() => { this._logOpen = !this._logOpen; }}
         ></yoke-field>
-        <keep-awake-light
+        ${s.fleet === null ? html`<keep-awake-light
           @keep-awake-status=${(event: CustomEvent<KeepAwakeStatus>) => { this._keepAwake = event.detail; }}
-        ></keep-awake-light>
+        ></keep-awake-light>` : ''}
         <activity-drawer
           .open=${this._logOpen}
           .events=${s.eventStream}
@@ -188,10 +239,11 @@ export class YokeApp extends LitElement {
           @inbox-select=${this._onCardSelect}
           @inbox-dismiss=${this._onDismiss}
           @inbox-keep-awake=${this._onKeepAwake}
+          @inbox-navigate=${this._onNavigate}
           @inbox-close-inspector=${() => { this._selection = null; }}
           @inbox-toggle=${() => { this._pinnedOpen = !this._pinnedOpen; }}
           @inbox-log=${() => { this._logOpen = !this._logOpen; }}
-          @inbox-anchors=${(event: CustomEvent<Map<string, Point>>) => { this._anchors = event.detail; }}
+          @inbox-anchors=${this._onAnchors}
         ></yoke-inbox>
       </div>
     `;

@@ -1,4 +1,4 @@
-import type { ActionFailure, DiskSpace } from '../store/types.js';
+import type { ActionFailure, DiskSpace, FleetNoticeCard } from '../store/types.js';
 import { failureIsOn } from './failures.js';
 import { formatBytes, formatDuration } from './format.js';
 import type { IssueColor } from './issue-colors.js';
@@ -13,6 +13,9 @@ import { actionVerb, STAGES, type StatusTone, type WorkView } from './work-view.
  * It is federated — each kind of thing a person can do comes from its own
  * source, and they are all drawn the same way, as cards, in one list:
  *
+ * - `fleet`: on Shipyard's dashboard, what is stopping work across the fleet:
+ *   a subscribed repository no member is assigned, a member assigned nothing,
+ *   a member with work that is not there to do it.
  * - `disk`: the disk yoke keeps its checkouts on is short of space even after
  *   every idle checkout was removed, so no new work starts until someone makes
  *   room (#288).
@@ -28,10 +31,10 @@ import { actionVerb, STAGES, type StatusTone, type WorkView } from './work-view.
  * A new source is one more function from the dashboard's state to cards, added
  * to `buildInbox`; nothing that draws the inbox has to know of it.
  */
-export type InboxSource = 'disk' | 'keep-awake' | 'approval' | 'review' | 'failure' | 'manual';
+export type InboxSource = 'fleet' | 'disk' | 'keep-awake' | 'approval' | 'review' | 'failure' | 'manual';
 
 /** The sources in the order their cards are listed, most pressing first. */
-export const INBOX_SOURCES: readonly InboxSource[] = ['disk', 'keep-awake', 'approval', 'review', 'failure', 'manual'];
+export const INBOX_SOURCES: readonly InboxSource[] = ['fleet', 'disk', 'keep-awake', 'approval', 'review', 'failure', 'manual'];
 
 /** The one thing a card's big button does. */
 export type InboxAction =
@@ -40,7 +43,9 @@ export type InboxAction =
   /** Open a page on GitHub in a new tab. */
   | { type: 'open'; href: string; label: string; hint: string }
   /** Start the keep-awake loop the browser refused to autoplay. */
-  | { type: 'keep-awake'; label: string; hint: string };
+  | { type: 'keep-awake'; label: string; hint: string }
+  /** Go to a page of Shipyard's console: where a notice about the fleet is put right. */
+  | { type: 'navigate'; page: string; label: string; hint: string };
 
 export interface InboxLink {
   label: string;
@@ -80,6 +85,8 @@ export interface InboxCard {
 export type Selection =
   | { kind: 'work'; key: string }
   | { kind: 'engine'; index: number }
+  /** A fleet member's heading, on Shipyard's dashboard. */
+  | { kind: 'crew'; id: string }
   | { kind: 'usage' }
   | { kind: 'hold' };
 
@@ -268,6 +275,34 @@ function failureCards(
 }
 
 /**
+ * A card for each thing the fleet has to say (`FleetNoticeCard`): its button
+ * goes to the page of the console where it is put right, or to GitHub.
+ */
+function fleetCards(notices: readonly FleetNoticeCard[] | undefined): InboxCard[] {
+  return (notices ?? []).map((notice) => {
+    const action: InboxAction | null = notice.action === null ? null
+      : notice.action.href !== undefined
+        ? { type: 'open', href: notice.action.href, label: notice.action.label, hint: notice.action.hint }
+        : { type: 'navigate', page: notice.action.page ?? '', label: notice.action.label, hint: notice.action.hint };
+    return {
+      id: `fleet:${notice.id}`,
+      source: 'fleet',
+      workKey: null,
+      color: null,
+      accent: notice.accent,
+      eyebrow: notice.eyebrow,
+      repo: notice.repo,
+      title: notice.title,
+      facts: notice.facts,
+      line: { text: notice.line, tone: notice.accent === 'alarm' ? 'problem' : 'plain' },
+      action,
+      links: [],
+      dismissible: false,
+    };
+  });
+}
+
+/**
  * The card for a disk too full to start new work on (#288). Yoke has already
  * removed every checkout it could, so only a person can make room; work under
  * way carries on, and new work starts by itself once there is enough.
@@ -325,6 +360,11 @@ export interface InboxInput {
   keepAwake: KeepAwakeStatus;
   /** The latest free-space reading (`DashboardState.disk`); a card while it is low. */
   disk?: DiskSpace | null;
+  /** What the fleet has to say (`DashboardState.notices`), on Shipyard's dashboard. */
+  notices?: readonly FleetNoticeCard[];
+  /** A fleet member's own screen: its cards say what is waiting, and their
+   *  buttons take no decision (`DashboardState.readOnly`). */
+  readOnly?: boolean;
   /** Ids of the cards a person has put away. */
   dismissed: ReadonlySet<string>;
   /** When each card was first listed (`InboxLedger`), by id. */
@@ -346,18 +386,43 @@ export interface InboxInput {
 export function buildInbox(input: InboxInput): InboxCard[] {
   const { works, arrivals } = input;
   const cards = [
+    ...fleetCards(input.notices),
     ...diskCards(input.disk),
     ...keepAwakeCards(input.keepAwake),
     ...approvalCards(works),
     ...reviewCards(works),
     ...failureCards(input.failures, works, input.nowMs, input.failureShowMs),
     ...manualCards(works),
-  ].filter((card) => !card.dismissible || !input.dismissed.has(card.id));
+  ]
+    .filter((card) => !card.dismissible || !input.dismissed.has(card.id))
+    .map((card) => (input.readOnly ? readOnlyCard(card) : card));
 
   const rank = (card: InboxCard): number => INBOX_SOURCES.indexOf(card.source);
   const arrived = (card: InboxCard): number => arrivals.get(card.id) ?? Number.MAX_SAFE_INTEGER;
   return cards.sort((a, b) =>
     rank(a) - rank(b) || arrived(a) - arrived(b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
+
+/** What an Approve button says on a screen that takes no decisions. */
+export const READ_ONLY_HINT = 'This screen shows what its fleet member is working on. Decisions are made in Shipyard.';
+
+/**
+ * A card as a fleet member's own screen shows it: the same card, saying the
+ * same thing, with a button that cannot be pressed. A PR waiting on an
+ * approval still says so here — the machine's screen is where someone walking
+ * past sees it — and says where the approval is given.
+ */
+function readOnlyCard(card: InboxCard): InboxCard {
+  if (card.action?.type !== 'approve') return card;
+  return {
+    ...card,
+    action: {
+      ...card.action,
+      disabled: true,
+      label: card.action.step === 'idle' ? 'Approve in Shipyard' : card.action.label,
+      hint: READ_ONLY_HINT,
+    },
+  };
 }
 
 /**
@@ -468,6 +533,11 @@ export function inspect(
     usageHeading: string;
     usageTitle: string;
     hold: { remaining: string; deadline: string; reason: string } | null;
+    /** The fleet's members, on Shipyard's dashboard (`FieldModel.crews`). */
+    crews?: ReadonlyArray<{
+      id: string; name: string; engines: number; burning: number; repos: readonly string[];
+      note: { text: string }; usage: { heading: string; title: string };
+    }> | null;
   },
 ): Inspection | null {
   if (selection === null) return null;
@@ -492,6 +562,23 @@ export function inspect(
         facts,
         body: work ? [work.title] : [],
         links: work ? workLinks(work) : [],
+      };
+    }
+    case 'crew': {
+      const crew = context.crews?.find((candidate) => candidate.id === selection.id);
+      if (!crew) return null;
+      const engines = crew.engines === 0 ? 'no engines running'
+        : `${crew.burning} of ${crew.engines} engine${crew.engines === 1 ? '' : 's'} burning`;
+      return {
+        workKey: null, color: null, eyebrow: 'Fleet member', repo: '',
+        title: crew.name,
+        facts: [engines],
+        body: [
+          crew.note.text,
+          crew.usage.title,
+          crew.repos.length === 0 ? 'Assigned no repositories.' : `Works ${crew.repos.join(', ')}.`,
+        ],
+        links: [],
       };
     }
     case 'usage':

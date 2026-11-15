@@ -6,6 +6,7 @@ import { WebSocketServer, type WebSocket } from "ws";
 import open from "open";
 import { globalEventEmitter, EventEmitter, type DashboardEvent } from "./event-emitter.js";
 import { APPROVAL_OUTCOME_SHOW_MS, isApprovalOutcome } from "./dashboard/shared/pill-approval.js";
+import { replayOp } from "./shared/replay-cache.js";
 
 /**
  * Per-client cap on buffered (un-flushed) WebSocket data. A backgrounded or
@@ -371,55 +372,24 @@ export class DashboardServer {
     return { repo: target, pullRequestNumber };
   }
 
+  /**
+   * Keep what a page opened later must be brought up to date with. Which
+   * events those are, and under what key, is `replayOp`'s to say
+   * (src/shared/replay-cache.ts): Shipyard keeps the same cache for every
+   * fleet member, so the rule lives where both read it.
+   */
   private updateStateCache(event: DashboardEvent): void {
-    const { type, data } = event;
-    if (type === "lifecycle-update" || type === "snapshot-update") {
-      // Scope per project so multiple projects sharing this dashboard each keep
-      // their own latest lifecycle/snapshot in the replay cache instead of
-      // overwriting one another (the bug that left a reconnecting client seeing
-      // only the last project's state).
-      const repo = (data["repo"] as string) || "";
-      this.cachedEvents.set(`${type}:${repo}`, event);
-    } else if (type === "action-start" || type === "action-complete" || type === "action-error") {
-      const cylinderIdx = ((data["actionIndex"] as number) || 1) - 1;
-      this.cachedEvents.set(`cylinder-${cylinderIdx}`, event);
-    } else if (type === "iteration-start" || type === "engine-idle") {
-      const engineIndex = (data["engineIndex"] as number) ?? 0;
-      this.cachedEvents.set(`cylinder-${engineIndex}`, event);
-      if (type === "iteration-start") {
-        const n = data["maxConcurrency"] as number | undefined;
-        if (typeof n === "number") this.maxConcurrency = n;
-      }
-    } else if (type === "engine-shutdown") {
-      const engineIndex = (data["engineIndex"] as number) ?? 0;
-      this.cachedEvents.set(`cylinder-${engineIndex}`, event);
-    } else if (type === "github-rate-limit") {
-      this.cachedEvents.set(type, event);
-    } else if (type === "github-rate-limit-cleared") {
-      this.cachedEvents.delete("github-rate-limit");
-    } else if (type === "work-hold") {
-      // Replayed on reconnect so a browser opened *during* a multi-hour hold
-      // still shows the waiting banner instead of a dashboard that looks idle.
-      this.cachedEvents.set(type, event);
-    } else if (type === "work-hold-cleared") {
-      this.cachedEvents.delete("work-hold");
-    } else if (type === "disk-space") {
-      // Only the latest reading matters; replayed so a page opened while the
-      // disk is short still lists it in the inbox.
-      this.cachedEvents.set(type, event);
-    } else if (type === "usage-update") {
-      // Only the latest reading matters; replaying it means a browser opened
-      // between polls shows the gauge at once instead of waiting up to a minute.
-      this.cachedEvents.set(type, event);
-    } else if (type === "shutdown-requested" || type === "app-shutdown") {
-      this.cachedEvents.set(type, event);
-    } else if (type === "pull-request-approval") {
-      // Each PR's latest approval status (#276), so a page opened or reloaded
-      // while an approval is under way still shows it, and one opened just
-      // after it ended still says how.
-      this.pruneApprovalOutcomes();
-      this.cachedEvents.set(`pull-request-approval:${String(data["repo"])}#${String(data["pullRequestNumber"])}`, event);
+    if (event.type === "iteration-start") {
+      const n = event.data["maxConcurrency"] as number | undefined;
+      if (typeof n === "number") this.maxConcurrency = n;
     }
+    // Each PR's latest approval status (#276) is kept; the outcomes too old to
+    // show are dropped as a new one arrives, so the cache never grows without
+    // bound over a long run.
+    if (event.type === "pull-request-approval") this.pruneApprovalOutcomes();
+    const op = replayOp(event);
+    for (const key of op.delete ?? []) this.cachedEvents.delete(key);
+    if (op.set !== undefined) this.cachedEvents.set(op.set, event);
   }
 
   /** The cached events a newly connected page is brought up to date with. */

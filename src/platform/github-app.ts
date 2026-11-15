@@ -1,0 +1,363 @@
+import { createHmac, createSign, timingSafeEqual } from "node:crypto";
+import type { AvailableRepo, GitHubStatus } from "../shared/protocol.js";
+import { iso, refuse, type Platform } from "./platform.js";
+import type { Row } from "./store.js";
+
+/**
+ * Shipyard on GitHub: a GitHub App the operator creates from the console and
+ * installs on the organization.
+ *
+ * An app, rather than a person's token, for three reasons. Its access is the
+ * repositories it is installed on and the permissions it asks for, not
+ * everything its owner can reach. Its work is its own on GitHub — the pull
+ * requests and comments are the app's, not a person's. And its credentials
+ * can be minted short: a fleet member holds no GitHub credential at all, and
+ * asks the platform for a token that lasts an hour and reaches only the
+ * repositories assigned to it.
+ *
+ * Connecting is GitHub's manifest flow, so nothing secret is ever typed or
+ * pasted:
+ *
+ *   1. the console posts a manifest (what the app is and what it may do) to
+ *      GitHub, in the operator's browser, with a state the platform remembers;
+ *   2. the operator confirms; GitHub sends the browser back with a code;
+ *   3. the platform redeems the code for the app: its id, its private key,
+ *      its webhook secret. The key and secrets go to SSM, the ids to the table;
+ *   4. the operator installs the app on the organization, choosing which
+ *      repositories it sees, and the platform finds the installation.
+ *
+ * Rows: `CONFIG/github` (the app's ids, its installation), `CONFIG/github-pending`
+ * (the state of a manifest sent and not yet redeemed).
+ */
+
+const CONFIG = "CONFIG";
+const APP = "github";
+const PENDING = "github-pending";
+/** The name of the app's credentials among the platform's secrets. */
+export const APP_SECRET_NAME = "github-app";
+const GITHUB_API = "https://api.github.com";
+const PENDING_MS = 60 * 60_000;
+
+/**
+ * What the app may do, which is what Yoke does with a token today:
+ * read and write code, issues and pull requests; read checks and statuses;
+ * approve and cancel workflow runs, and push a branch that changes a workflow;
+ * and, for Project SDLC, move items on the organization's project boards and
+ * ask its members for review.
+ */
+export const APP_PERMISSIONS: Readonly<Record<string, string>> = {
+  metadata: "read",
+  contents: "write",
+  issues: "write",
+  pull_requests: "write",
+  checks: "read",
+  statuses: "read",
+  actions: "write",
+  workflows: "write",
+  organization_projects: "write",
+  members: "read",
+};
+
+interface AppRow extends Row {
+  appId: number;
+  slug: string;
+  name: string;
+  htmlUrl: string;
+  org: string;
+  clientId: string;
+  installationId: number | null;
+  installationAccount: string | null;
+  repositorySelection: string | null;
+  installationUrl: string | null;
+  connectedAt: string;
+  connectedBy: string | null;
+}
+
+interface AppSecrets {
+  pem: string;
+  webhookSecret: string;
+  clientSecret: string;
+}
+
+function cleanOrg(value: unknown): string {
+  const org = typeof value === "string" ? value.trim() : "";
+  if (!/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(org)) {
+    return refuse(400, "ORG_REQUIRED", "name the GitHub organization the app is for, as it is spelled in its URL");
+  }
+  return org;
+}
+
+async function appRow(p: Platform): Promise<AppRow | null> {
+  return (await p.table.get(CONFIG, APP)) as AppRow | null;
+}
+
+async function appSecrets(p: Platform): Promise<AppSecrets | null> {
+  const raw = await p.secrets.get(APP_SECRET_NAME);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as AppSecrets;
+  } catch {
+    return null;
+  }
+}
+
+export function statusOf(row: AppRow | null): GitHubStatus {
+  if (!row) return { connected: false, org: null, app: null, installation: null };
+  return {
+    connected: true,
+    org: row.org,
+    app: {
+      id: row.appId,
+      slug: row.slug,
+      name: row.name,
+      htmlUrl: row.htmlUrl,
+      installUrl: `${row.htmlUrl.replace(/\/+$/, "")}/installations/new`,
+    },
+    installation: row.installationId === null || row.installationId === undefined ? null : {
+      id: row.installationId,
+      account: row.installationAccount ?? row.org,
+      repositorySelection: row.repositorySelection ?? "selected",
+      htmlUrl: row.installationUrl ?? "",
+    },
+  };
+}
+
+export async function githubStatus(p: Platform): Promise<GitHubStatus> {
+  return statusOf(await appRow(p));
+}
+
+/** Whether the platform can mint a token: the app exists and is installed somewhere. */
+export async function githubReady(p: Platform): Promise<boolean> {
+  const row = await appRow(p);
+  return row !== null && row.installationId !== null && row.installationId !== undefined;
+}
+
+// ── Connecting: the manifest flow ────────────────────────────────────────────
+
+/**
+ * The manifest for the organization's app, and where the operator's browser
+ * posts it. The state is remembered for an hour: only a code that comes back
+ * with it is redeemed.
+ */
+export async function beginManifest(p: Platform, input: { org?: unknown }): Promise<{ action: string; manifest: Record<string, unknown>; state: string }> {
+  if (await appRow(p)) {
+    return refuse(409, "ALREADY_CONNECTED", "Shipyard is already connected to GitHub", "disconnect it first to connect a different app");
+  }
+  const org = cleanOrg(input.org);
+  const state = p.random(16);
+  await p.table.put({
+    PK: CONFIG,
+    SK: PENDING,
+    state,
+    org,
+    ttl: Math.floor((p.now() + PENDING_MS) / 1000),
+    expiresAtMs: p.now() + PENDING_MS,
+  });
+  const url = p.settings.publicUrl.replace(/\/+$/, "");
+  const manifest = {
+    // App names are GitHub-wide; the organization's makes this one its own.
+    name: `shipyard-${org}`.slice(0, 34),
+    description: "Shipyard: coding agents working this organization's issue queues.",
+    url,
+    hook_attributes: { url: `${url}/hooks/github`, active: true },
+    redirect_url: `${url}/`,
+    setup_url: `${url}/?github=installed`,
+    setup_on_update: true,
+    public: false,
+    default_permissions: APP_PERMISSIONS,
+    // Installation events arrive whatever is listed; nothing else is asked for yet.
+    default_events: [],
+  };
+  return {
+    action: `https://github.com/organizations/${org}/settings/apps/new?state=${state}`,
+    manifest,
+    state,
+  };
+}
+
+/** Redeem the code GitHub sent the operator back with for the app itself. */
+export async function completeManifest(p: Platform, input: { code?: unknown; state?: unknown }, by: string | null): Promise<GitHubStatus> {
+  const code = typeof input.code === "string" ? input.code.trim() : "";
+  const state = typeof input.state === "string" ? input.state : "";
+  if (!/^[A-Za-z0-9_-]{1,200}$/.test(code)) return refuse(400, "CODE_REQUIRED", "GitHub's code is missing");
+  const pending = await p.table.get(CONFIG, PENDING);
+  const expiresAtMs = pending?.["expiresAtMs"];
+  if (!pending || pending["state"] !== state || typeof expiresAtMs !== "number" || expiresAtMs <= p.now()) {
+    return refuse(403, "STATE_MISMATCH", "this is not the answer to a connection Shipyard started", "start again from Repositories, Connect GitHub");
+  }
+  if (await appRow(p)) return refuse(409, "ALREADY_CONNECTED", "Shipyard is already connected to GitHub");
+
+  const res = await p.fetch(`${GITHUB_API}/app-manifests/${code}/conversions`, {
+    method: "POST",
+    headers: githubHeaders(),
+  });
+  if (!res.ok) {
+    return refuse(502, "GITHUB_REFUSED", `GitHub would not create the app (${res.status})`, "the code lasts an hour and works once: start again from Repositories, Connect GitHub");
+  }
+  const app = await res.json() as {
+    id: number; slug: string; name: string; html_url: string; client_id: string; client_secret: string;
+    webhook_secret: string | null; pem: string; owner?: { login?: string };
+  };
+  const secrets: AppSecrets = { pem: app.pem, webhookSecret: app.webhook_secret ?? "", clientSecret: app.client_secret };
+  // The key first: an app in the table whose key was never kept could do nothing.
+  await p.secrets.put(APP_SECRET_NAME, JSON.stringify(secrets));
+  const row: AppRow = {
+    PK: CONFIG,
+    SK: APP,
+    appId: app.id,
+    slug: app.slug,
+    name: app.name,
+    htmlUrl: app.html_url,
+    org: app.owner?.login ?? String(pending["org"]),
+    clientId: app.client_id,
+    installationId: null,
+    installationAccount: null,
+    repositorySelection: null,
+    installationUrl: null,
+    connectedAt: iso(p.now()),
+    connectedBy: by,
+  };
+  await p.table.put(row);
+  await p.table.delete(CONFIG, PENDING);
+  return statusOf(row);
+}
+
+/**
+ * Forget the app: its ids and its key. The app itself stays on GitHub until
+ * the operator deletes it there; this only makes Shipyard stop being it.
+ */
+export async function disconnectGithub(p: Platform): Promise<void> {
+  await p.table.delete(CONFIG, APP);
+  await p.table.delete(CONFIG, PENDING);
+  await p.secrets.delete(APP_SECRET_NAME);
+}
+
+// ── Being the app ────────────────────────────────────────────────────────────
+
+function githubHeaders(token?: string): Record<string, string> {
+  return {
+    accept: "application/vnd.github+json",
+    "x-github-api-version": "2022-11-28",
+    "user-agent": "shipyard",
+    ...(token ? { authorization: `Bearer ${token}` } : {}),
+  };
+}
+
+const base64Url = (data: Buffer | string): string =>
+  Buffer.from(data).toString("base64").replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
+
+/** A token that says "I am the app", good for ten minutes: what GitHub takes to mint an installation's. */
+export function appJwt(appId: number, pem: string, nowMs: number): string {
+  const seconds = Math.floor(nowMs / 1000);
+  const header = base64Url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+  // A minute back, for a clock that runs ahead of GitHub's.
+  const payload = base64Url(JSON.stringify({ iat: seconds - 60, exp: seconds + 9 * 60, iss: String(appId) }));
+  const signer = createSign("RSA-SHA256");
+  signer.update(`${header}.${payload}`);
+  return `${header}.${payload}.${base64Url(signer.sign(pem))}`;
+}
+
+async function asApp(p: Platform): Promise<{ row: AppRow; jwt: string }> {
+  const row = await appRow(p);
+  if (!row) return refuse(409, "GITHUB_NOT_CONNECTED", "Shipyard is not connected to GitHub", "connect it in the console: Repositories, Connect GitHub");
+  const secrets = await appSecrets(p);
+  if (!secrets?.pem) return refuse(500, "GITHUB_KEY_MISSING", "the GitHub App's key is missing", "disconnect GitHub in the console and connect it again");
+  return { row, jwt: appJwt(row.appId, secrets.pem, p.now()) };
+}
+
+/**
+ * Find where the app is installed and remember it. The organization's own
+ * installation if it has one, else the only one there is.
+ */
+export async function refreshInstallation(p: Platform): Promise<GitHubStatus> {
+  const { row, jwt } = await asApp(p);
+  const res = await p.fetch(`${GITHUB_API}/app/installations?per_page=100`, { headers: githubHeaders(jwt) });
+  if (!res.ok) return refuse(502, "GITHUB_REFUSED", `GitHub would not list the app's installations (${res.status})`);
+  const installations = await res.json() as Array<{
+    id: number; account?: { login?: string } | null; repository_selection?: string; html_url?: string; suspended_at?: string | null;
+  }>;
+  const live = installations.filter((installation) => !installation.suspended_at);
+  const found = live.find((installation) => installation.account?.login?.toLowerCase() === row.org.toLowerCase()) ?? live[0] ?? null;
+  const patch = {
+    installationId: found?.id ?? null,
+    installationAccount: found?.account?.login ?? null,
+    repositorySelection: found?.repository_selection ?? null,
+    installationUrl: found?.html_url ?? null,
+  };
+  const updated = (await p.table.update(CONFIG, APP, patch)) as AppRow | null;
+  return statusOf(updated ?? { ...row, ...patch });
+}
+
+export interface InstallationToken {
+  token: string;
+  /** ISO time it stops working: an hour from when it was minted. */
+  expiresAt: string;
+}
+
+/**
+ * A token for the installation, which reaches only `repos` when they are
+ * named ("owner/repo"; the owner is the installation's). GitHub mints it for
+ * an hour.
+ */
+export async function installationToken(p: Platform, repos?: readonly string[]): Promise<InstallationToken> {
+  const { row, jwt } = await asApp(p);
+  if (row.installationId === null || row.installationId === undefined) {
+    return refuse(409, "GITHUB_NOT_INSTALLED", "the GitHub App is not installed on the organization yet", "install it from the console: Repositories");
+  }
+  const names = repos?.map((repo) => repo.slice(repo.indexOf("/") + 1));
+  const res = await p.fetch(`${GITHUB_API}/app/installations/${row.installationId}/access_tokens`, {
+    method: "POST",
+    headers: { ...githubHeaders(jwt), "content-type": "application/json" },
+    body: JSON.stringify(names && names.length > 0 ? { repositories: names } : {}),
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    // 404: the installation is gone. 422: a repository named is not one it can see.
+    return refuse(
+      502,
+      res.status === 422 ? "GITHUB_REPO_NOT_INSTALLED" : "GITHUB_REFUSED",
+      `GitHub would not mint a token (${res.status}): ${detail.slice(0, 200)}`,
+      res.status === 422
+        ? "the app is not installed on one of those repositories: add it on GitHub, in the app's installation settings"
+        : "check the app is still installed on the organization",
+    );
+  }
+  const body = await res.json() as { token: string; expires_at: string };
+  return { token: body.token, expiresAt: body.expires_at };
+}
+
+/** Every repository the installation can see, by name. */
+export async function listAvailableRepos(p: Platform): Promise<AvailableRepo[]> {
+  const { token } = await installationToken(p);
+  const repos: AvailableRepo[] = [];
+  for (let page = 1; page <= 20; page++) {
+    const res = await p.fetch(`${GITHUB_API}/installation/repositories?per_page=100&page=${page}`, { headers: githubHeaders(token) });
+    if (!res.ok) return refuse(502, "GITHUB_REFUSED", `GitHub would not list the installation's repositories (${res.status})`);
+    const body = await res.json() as {
+      repositories: Array<{ full_name: string; private: boolean; archived: boolean; description: string | null; default_branch: string; html_url: string }>;
+    };
+    for (const repo of body.repositories) {
+      repos.push({
+        repo: repo.full_name,
+        private: repo.private,
+        archived: repo.archived,
+        description: repo.description,
+        defaultBranch: repo.default_branch,
+        htmlUrl: repo.html_url,
+      });
+    }
+    if (body.repositories.length < 100) break;
+  }
+  return repos.sort((a, b) => (a.repo.toLowerCase() < b.repo.toLowerCase() ? -1 : 1));
+}
+
+// ── Webhooks ─────────────────────────────────────────────────────────────────
+
+/** Whether `signature` (the `X-Hub-Signature-256` header) is GitHub's over `body` with the app's webhook secret. */
+export async function verifyWebhook(p: Platform, body: string, signature: string | undefined): Promise<boolean> {
+  const secrets = await appSecrets(p);
+  if (!secrets?.webhookSecret || !signature?.startsWith("sha256=")) return false;
+  const expected = createHmac("sha256", secrets.webhookSecret).update(body).digest();
+  const given = Buffer.from(signature.slice("sha256=".length), "hex");
+  return given.length === expected.length && timingSafeEqual(given, expected);
+}

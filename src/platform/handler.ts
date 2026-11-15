@@ -1,52 +1,201 @@
+import { gzipSync } from "node:zlib";
+import { ApiGatewayManagementApiClient, PostToConnectionCommand } from "@aws-sdk/client-apigatewaymanagementapi";
+import { DeleteParameterCommand, GetParameterCommand, PutParameterCommand, SSMClient } from "@aws-sdk/client-ssm";
+import type { MemberPush } from "../shared/protocol.js";
 import { commitOf } from "../shared/release.js";
+import { pushToFleet } from "./fleet.js";
+import { handleHttp, type HttpRequest } from "./http.js";
+import { createJwtVerifier } from "./jwt.js";
+import { randomHex, type Platform, type Secrets, type Sockets } from "./platform.js";
+import { DynamoTable } from "./store.js";
+import { tick } from "./tick.js";
+import { handleSocket } from "./ws.js";
 
 /**
- * The platform function (#1): one Lambda for every event Shipyard receives.
+ * The platform function (#1, #2): one Lambda for every event Shipyard receives.
  *
  *   - the HTTP API (payload format 2.0): the console's calls under /api/, the
- *     fleet's under /enroll and /fleet/, GitHub's under /hooks/, and /healthz;
- *   - the WebSocket API: $connect, $disconnect and whatever a socket sends;
- *   - the schedule's tick (`{ source: "shipyard.tick" }`);
- *   - the deploy's announcement (`{ source: "shipyard.release" }`).
+ *     fleet's under /enroll and /fleet/, GitHub's under /hooks/, and /healthz
+ *     (http.ts);
+ *   - the WebSocket API: $connect, $disconnect and whatever a socket sends
+ *     (ws.ts);
+ *   - the schedule's tick, `{ source: "shipyard.tick" }` (tick.ts);
+ *   - the deploy's announcement, `{ source: "shipyard.release" }`: every
+ *     connected fleet member is told the commit the platform now runs.
  *
- * This is the frame the rest of the platform is built into (#2): it answers
- * /healthz with the commit it runs, and refuses everything else.
+ * This file is the only one that names AWS: it builds the `Platform` the rest
+ * is written against from the function's environment.
  */
 
-interface HttpEvent {
-  rawPath?: string;
-  requestContext?: { http?: { method?: string; path?: string }; connectionId?: string; routeKey?: string };
+function required(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`${name} is not set`);
+  return value;
 }
 
-interface HttpResult {
-  statusCode: number;
-  headers?: Record<string, string>;
-  body?: string;
-}
-
-function json(statusCode: number, body: unknown): HttpResult {
+/** API Gateway's connection management, as the platform pushes down a socket. */
+function awsSockets(endpoint: string): Sockets {
+  const client = new ApiGatewayManagementApiClient({ endpoint });
   return {
-    statusCode,
-    headers: { "content-type": "application/json", "cache-control": "no-store" },
-    body: JSON.stringify(body),
+    async post(connectionId, message) {
+      try {
+        await client.send(new PostToConnectionCommand({ ConnectionId: connectionId, Data: Buffer.from(JSON.stringify(message)) }));
+        return true;
+      } catch (error) {
+        const failure = error as { name?: string; $metadata?: { httpStatusCode?: number } };
+        // The socket closed and API Gateway has not said so yet.
+        if (failure.name === "GoneException" || failure.$metadata?.httpStatusCode === 410) return false;
+        throw error;
+      }
+    },
   };
 }
 
-export async function handler(event: HttpEvent & { source?: string }): Promise<unknown> {
-  const release = commitOf(process.env.SHIPYARD_RELEASE_SHA ?? null);
+/** SSM SecureStrings under the platform's prefix. Read once per container and kept for a few minutes. */
+function awsSecrets(prefix: string): Secrets {
+  const client = new SSMClient({});
+  const cache = new Map<string, { value: string | null; atMs: number }>();
+  const KEEP_MS = 5 * 60_000;
+  const nameOf = (name: string) => `${prefix}${name}`;
+  return {
+    async get(name) {
+      const kept = cache.get(name);
+      if (kept && Date.now() - kept.atMs < KEEP_MS) return kept.value;
+      let value: string | null = null;
+      try {
+        const result = await client.send(new GetParameterCommand({ Name: nameOf(name), WithDecryption: true }));
+        value = result.Parameter?.Value ?? null;
+      } catch (error) {
+        if ((error as { name?: string }).name !== "ParameterNotFound") throw error;
+      }
+      cache.set(name, { value, atMs: Date.now() });
+      return value;
+    },
+    async put(name, value) {
+      await client.send(new PutParameterCommand({ Name: nameOf(name), Value: value, Type: "SecureString", Overwrite: true }));
+      cache.set(name, { value, atMs: Date.now() });
+    },
+    async delete(name) {
+      try {
+        await client.send(new DeleteParameterCommand({ Name: nameOf(name) }));
+      } catch (error) {
+        if ((error as { name?: string }).name !== "ParameterNotFound") throw error;
+      }
+      cache.set(name, { value: null, atMs: Date.now() });
+    },
+  };
+}
 
-  if (event.source === "shipyard.release" || event.source === "shipyard.tick") {
-    return { ok: true, release };
+let platform: Platform | null = null;
+
+/** The platform, built once per container from the function's environment. */
+function awsPlatform(): Platform {
+  platform ??= {
+    table: new DynamoTable(required("SHIPYARD_TABLE")),
+    sockets: awsSockets(required("SHIPYARD_WS_ENDPOINT")),
+    secrets: awsSecrets(required("SHIPYARD_SSM_PREFIX")),
+    fetch: (input, init) => fetch(input, init),
+    now: () => Date.now(),
+    random: randomHex,
+    settings: {
+      release: commitOf(process.env["SHIPYARD_RELEASE_SHA"] ?? null),
+      publicUrl: required("SHIPYARD_PUBLIC_URL"),
+      publicWs: required("SHIPYARD_PUBLIC_WS"),
+    },
+    verifyOperator: createJwtVerifier({
+      issuer: required("SHIPYARD_COGNITO_ISSUER"),
+      audience: required("SHIPYARD_COGNITO_CLIENT_ID"),
+    }),
+    log: (line) => console.log(line),
+  };
+  return platform;
+}
+
+// ── The events ───────────────────────────────────────────────────────────────
+
+interface LambdaEvent {
+  source?: string;
+  rawPath?: string;
+  headers?: Record<string, string | undefined>;
+  queryStringParameters?: Record<string, string | undefined> | null;
+  body?: string | null;
+  isBase64Encoded?: boolean;
+  requestContext?: {
+    http?: { method?: string; path?: string };
+    connectionId?: string;
+    routeKey?: string;
+    authorizer?: { jwt?: { claims?: Record<string, unknown> } };
+  };
+}
+
+function lowered(record: Record<string, string | undefined> | null | undefined): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [name, value] of Object.entries(record ?? {})) {
+    if (typeof value === "string") out[name.toLowerCase()] = value;
+  }
+  return out;
+}
+
+function bodyOf(event: LambdaEvent): string {
+  if (!event.body) return "";
+  return event.isBase64Encoded ? Buffer.from(event.body, "base64").toString("utf8") : event.body;
+}
+
+/** An answer over this size is gzipped when the caller takes gzip: a console's first read carries every member's state. */
+const GZIP_OVER_BYTES = 4 * 1024;
+
+function httpResult(status: number, body: unknown, acceptEncoding: string): Record<string, unknown> {
+  const json = JSON.stringify(body);
+  const headers: Record<string, string> = { "content-type": "application/json", "cache-control": "no-store" };
+  if (Buffer.byteLength(json) > GZIP_OVER_BYTES && /\bgzip\b/.test(acceptEncoding)) {
+    return {
+      statusCode: status,
+      headers: { ...headers, "content-encoding": "gzip", vary: "accept-encoding" },
+      body: gzipSync(json).toString("base64"),
+      isBase64Encoded: true,
+    };
+  }
+  return { statusCode: status, headers, body: json };
+}
+
+export async function handler(event: LambdaEvent): Promise<unknown> {
+  const p = awsPlatform();
+
+  if (event.source === "shipyard.tick") {
+    try {
+      return { ok: true, ...(await tick(p)) };
+    } catch (error) {
+      // A tick that fails is tried again in two minutes; the schedule does not retry it.
+      p.log(`tick failed: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
+      return { ok: false };
+    }
   }
 
-  // A socket: nothing is accepted yet.
-  if (event.requestContext?.connectionId !== undefined) {
-    return { statusCode: event.requestContext.routeKey === "$connect" ? 403 : 200 };
+  if (event.source === "shipyard.release") {
+    const message: MemberPush = { t: "release", release: p.settings.release };
+    const told = await pushToFleet(p, message).catch(() => 0);
+    return { ok: true, release: p.settings.release, told };
   }
 
-  const path = event.rawPath ?? event.requestContext?.http?.path ?? "";
-  if (path === "/healthz") {
-    return json(200, { ok: true, service: "shipyard", release });
+  const context = event.requestContext;
+  if (context?.connectionId !== undefined) {
+    return handleSocket(p, {
+      routeKey: context.routeKey ?? "$default",
+      connectionId: context.connectionId,
+      headers: lowered(event.headers),
+      query: Object.fromEntries(Object.entries(event.queryStringParameters ?? {}).filter((entry): entry is [string, string] => typeof entry[1] === "string")),
+      body: bodyOf(event),
+    });
   }
-  return json(404, { ok: false, code: "NOT_FOUND", error: `nothing answers ${path}` });
+
+  const headers = lowered(event.headers);
+  const request: HttpRequest = {
+    method: (context?.http?.method ?? "GET").toUpperCase(),
+    path: event.rawPath ?? context?.http?.path ?? "/",
+    headers,
+    body: bodyOf(event),
+    claims: context?.authorizer?.jwt?.claims ?? null,
+  };
+  const response = await handleHttp(p, request);
+  return httpResult(response.status, response.body, headers["accept-encoding"] ?? "");
 }

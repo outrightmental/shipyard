@@ -1,0 +1,69 @@
+@import '../styles/tokens.css';
+
+/*
+ * The console's shell: the menu down the left-hand edge and the pages beside
+ * it. It is drawn in the dashboard's own trim (styles/tokens.css) — hue-free
+ * gray, with saturated colour kept for work that is burning and for the
+ * status signals — so the shell around the field never competes with it.
+ * Nothing here names a colour of its own: every shade is a trim token at an
+ * alpha.
+ */
+:root {
+  color-scheme: dark;
+
+  /* Surfaces, darkest at the page: the ground lifted by steps of the trim. */
+  --shell-bg: var(--bg-dark);
+  --shell-raised: rgba(var(--trim-rgb), 0.045);
+  --shell-raised-2: rgba(var(--trim-rgb), 0.085);
+  --shell-raised-3: rgba(var(--trim-rgb), 0.14);
+
+  /* Hairlines. */
+  --shell-line: rgba(var(--trim-rgb), 0.13);
+  --shell-line-strong: rgba(var(--trim-rgb), 0.26);
+
+  /* Text. */
+  --shell-fg: var(--trim);
+  --shell-fg-bright: var(--trim-bright);
+  --shell-fg-dim: var(--trim-dim);
+  --shell-fg-faint: rgba(var(--trim-rgb), 0.42);
+
+  --r-1: 4px;
+  --r-2: 6px;
+  --r-3: 10px;
+  --r-4: 14px;
+
+  --fs-0: 11px;
+  --fs-1: 12px;
+  --fs-2: 13px;
+  --fs-3: 14px;
+  --fs-4: 16px;
+  --fs-5: 20px;
+  --fs-6: 26px;
+
+  --topbar-h: 46px;
+  --sidebar-w: 212px;
+  --sidebar-w-collapsed: 56px;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--fs-2);
+  background: var(--shell-bg);
+  color: var(--shell-fg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+#app { height: 100%; }
+
+.console-starting {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: var(--shell-fg-dim);
+  font-size: var(--fs-3);
+}

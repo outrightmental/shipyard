@@ -1,7 +1,7 @@
 {
-  "name": "yoke",
+  "name": "shipyard",
   "version": "1.0.0",
-  "description": "Yoke a team of coding agents to work through a GitHub issue queue",
+  "description": "Shipyard: a distributed agentic coding factory, centralized for the whole organization",
   "main": "dist/src/index.js",
   "scripts": {
     "build": "tsc -p tsconfig.json && npm run typecheck:dashboard && npm run build:dashboard",
@@ -13,24 +13,31 @@
     "predemo:dashboard": "npm run build:dashboard",
     "demo:dashboard": "tsx tools/dashboard-demo.ts",
     "start": "npm run build && node dist/src/index.js",
-    "test": "node --import tsx --test --test-force-exit $(find test -name '*.test.ts' | sort)"
+    "test": "node --import tsx --test --test-force-exit \"test/**/*.test.ts\"",
+    "build:lambda": "node tools/build-lambda.mjs",
+    "build:console": "node tools/build-console.mjs"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/outrightmental/yoke.git"
+    "url": "git+https://github.com/outrightmental/shipyard.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "module",
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   },
   "bugs": {
-    "url": "https://github.com/outrightmental/yoke/issues"
+    "url": "https://github.com/outrightmental/shipyard/issues"
   },
-  "homepage": "https://github.com/outrightmental/yoke#readme",
+  "homepage": "https://github.com/outrightmental/shipyard#readme",
   "devDependencies": {
+    "@aws-sdk/client-apigatewaymanagementapi": "^3.1169.0",
+    "@aws-sdk/client-dynamodb": "^3.1169.0",
+    "@aws-sdk/client-ssm": "^3.1169.0",
+    "@aws-sdk/lib-dynamodb": "^3.1169.0",
+    "@types/aws-lambda": "^8.10.164",
     "@types/node": "^25.6.2",
     "@types/ws": "^8.18.1",
     "esbuild": "^0.25.0",
@@ -42,5 +49,6 @@
     "js-yaml": "^5.2.0",
     "open": "^10.1.0",
     "ws": "^8.17.0"
-  }
+  },
+  "private": true
 }

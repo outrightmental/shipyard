@@ -29,8 +29,8 @@ It is [Yoke](design/YOKE.md) run as a service. Yoke does all of this on one mach
 └──────────┴────────────────────────────────────────────────────┴───────────────┘
 ```
 
-- **Dashboard** is Yoke's, as it is drawn — [the field and the inbox](design/DASHBOARD.md) — for the whole fleet. Work that is burning is at the top, **grouped by the fleet member burning it**, with that member's own Claude usage in its heading. Everything else is below, grouped by repository.
-- **Fleet** is the machines: which are online, the commit each runs, its Claude usage, how many cylinders it has, what it is assigned.
+- **Dashboard** is Yoke's, as it is drawn — [the field and the inbox](design/DASHBOARD.md) — for the whole fleet. Work that is burning is at the top, **grouped by the fleet member burning it**, with that member's own Claude usage in its heading, and how its machine is doing along the heading's right-hand end. Everything else is below, grouped by repository.
+- **Fleet** is the machines: which are online, the commit each runs, its Claude usage, how many cylinders it has, how its machine is doing, what it is assigned.
 - **Repositories** is where Shipyard is connected to GitHub and where work is given out: subscribe to a repository, and assign it to a fleet member.
 - **The inbox**, down the right-hand edge, is everything waiting on a person: a PR to approve, and whatever is stopping work across the fleet.
 
@@ -117,6 +117,8 @@ A fleet member is Yoke's engine pool with its orders coming from Shipyard. How i
 **It keeps itself on Shipyard's commit.** There is no staging: `main` is what runs. Every answer Shipyard gives a member names the commit it runs, and a member on another commit finishes what its agents are doing, fast-forwards its checkout to exactly that commit, and restarts. If it cannot — the checkout has local changes, or is on another branch — it carries on working, and says why on the Fleet page.
 
 **It carries on without Shipyard.** A member that cannot reach the platform keeps working what it was assigned, and reports when the platform is back.
+
+**It measures the machine it runs on.** Every fifteen seconds it reports how busy the processor is (all of it, and its busiest core), the load average, memory in use, how much disk is free where its checkouts are kept, how long Shipyard took to answer it, how late its own process is running, and how long the machine has been up. Each member's heading on the dashboard reads as many of these as it has room for, most telling first, in columns the whole fleet shares; clicking the heading says all of them, and so does the Fleet page. A reading is in trim until it is the thing to look at, then yellow, then red. Nothing is installed to measure it: it is what Node has on every system a member runs on, so Windows, which keeps no load average, reports none. A member that is away says nothing of its machine.
 
 | | |
 | --- | --- |

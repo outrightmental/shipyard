@@ -1,3 +1,4 @@
+import type { SystemGauge } from '../shared/system-view.js';
 import { briefStatus, STAGES, workGlyph, type WorkSignal, type WorkStatus, type WorkView } from '../shared/work-view.js';
 import { PING_MS, type Ping, type PlacedNode } from './animator.js';
 import { inflate, rect, type Point, type Rect } from './geometry.js';
@@ -11,7 +12,7 @@ import {
   type StratumLevel,
   type WorkNode,
 } from './layout.js';
-import type { FieldModel, Tether, TetherState } from './model.js';
+import type { Crew, FieldModel, Tether, TetherState } from './model.js';
 import { rgba, type Palette, type Rgb } from './palette.js';
 import { mono, sans, withoutColorEmoji, type TextFitter, type TextStyle } from './text.js';
 
@@ -139,6 +140,34 @@ const BENCH_STYLE = mono(400, 11);
 const HEADER_STYLE = mono(600, 10.5, 2.2);
 const HEADER_COUNT_STYLE = mono(600, 10.5, 0.4);
 const HEADER_NOTE_STYLE = sans(400, 11);
+/** A fleet member's machine, in its heading: the name of each thing measured, smaller than what it reads. */
+const SYSTEM_LABEL_STYLE = mono(500, 9, 1.2);
+const SYSTEM_PAD = 5;
+const SYSTEM_GAP = 16;
+const SYSTEM_BAR_W = 22;
+const SYSTEM_BAR_H = 3;
+/** How much of the line on how a member is doing is kept, whatever its machine has to say. */
+const SYSTEM_NOTE_KEEPS = 200;
+/** The longest each gauge reads: the room it is given, so that it never moves as its reading changes. */
+const SYSTEM_WIDEST: Record<SystemGauge['key'], string> = {
+  cpu: '100%', memory: '100%', disk: '1023 GB', load: '99.9', network: '999 MS', lag: '999 MS', uptime: '99D 23H',
+};
+/** The gauges in the order a heading keeps them, as system-view.ts lists them. */
+const SYSTEM_ORDER: ReadonlyArray<SystemGauge['key']> = ['cpu', 'memory', 'disk', 'load', 'network', 'lag', 'uptime'];
+/** The ones that are a share of something, and have a bar to say how much. */
+const SYSTEM_BARRED: ReadonlySet<SystemGauge['key']> = new Set(['cpu', 'memory', 'disk']);
+
+interface SystemColumn {
+  key: SystemGauge['key'];
+  w: number;
+}
+
+interface MemberLead {
+  label: string;
+  count: string | null;
+  usage: { reading: string; resets: string } | null;
+  width: number;
+}
 const HUD_TITLE_STYLE = mono(700, 19, 3);
 const HUD_SUB_STYLE = mono(500, 10, 2);
 const HUD_LABEL_STYLE = mono(500, 9.5, 1.8);
@@ -163,6 +192,8 @@ export class Painter {
   private _grainTried = false;
   /** A glow for every color that has had one, by its "r,g,b"; null where no canvas could be made. */
   private readonly _sprites = new Map<string, Surface | null>();
+  /** The columns the fleet's machines are read in, worked out once for each model drawn. */
+  private readonly _systemColumnsOf = new WeakMap<FieldModel, { width: number; columns: SystemColumn[] }>();
 
   constructor(
     private _palette: Palette,
@@ -516,28 +547,24 @@ export class Painter {
     const end = x + node.rect.w;
     const focused = frame.hover === node.id || frame.focus === node.id
       || (frame.model.selection?.kind === 'crew' && frame.model.selection.id === crew.id);
+    const lead = this._memberLead(crew, node.rect.w);
 
-    const label = this._fitter.fit(crew.name.toUpperCase(), HEADER_STYLE, Math.max(60, node.rect.w * 0.4));
-    this._text(ctx, label, x, cy, HEADER_STYLE, rgba(p.trimBright, focused ? 1 : crew.online ? 0.86 : 0.6));
-    let cursor = x + this._fitter.width(label, HEADER_STYLE) + 8;
+    this._text(ctx, lead.label, x, cy, HEADER_STYLE, rgba(p.trimBright, focused ? 1 : crew.online ? 0.86 : 0.6));
+    let cursor = x + this._fitter.width(lead.label, HEADER_STYLE) + 8;
 
-    if (crew.engines > 0) {
-      const count = `${crew.burning}/${crew.engines}`;
-      this._text(ctx, count, cursor, cy, HEADER_COUNT_STYLE, rgba(p.trim, 0.9));
-      cursor += this._fitter.width(count, HEADER_COUNT_STYLE) + 14;
+    if (lead.count !== null) {
+      this._text(ctx, lead.count, cursor, cy, HEADER_COUNT_STYLE, rgba(p.trim, 0.9));
+      cursor += this._fitter.width(lead.count, HEADER_COUNT_STYLE) + 14;
     } else {
       cursor += 6;
     }
 
     // The gauge: a small ring that fills as the usage window is used up, and
     // what it reads beside it. Left out when there is no room for the words.
-    const gauge = crew.usage;
-    const tone: Rgb = gauge.tone === 'critical' ? p.red : gauge.tone === 'warn' ? p.yellow : p.trimBright;
-    const alpha = gauge.tone === 'unknown' ? 0.4 : 1;
-    const reading = `${gauge.label} ${gauge.percentText}`;
-    const resets = gauge.resetText === '—' ? '' : `RESETS IN ${gauge.resetText.toUpperCase()}`;
-    const gaugeW = 18 + this._fitter.width(reading, HEADER_COUNT_STYLE) + (resets ? 10 + this._fitter.width(resets, HEADER_COUNT_STYLE) : 0);
-    if (end - cursor > gaugeW + 24) {
+    if (lead.usage !== null) {
+      const gauge = crew.usage;
+      const tone: Rgb = gauge.tone === 'critical' ? p.red : gauge.tone === 'warn' ? p.yellow : p.trimBright;
+      const alpha = gauge.tone === 'unknown' ? 0.4 : 1;
       const r = 5;
       const gx = cursor + r;
       ctx.lineCap = 'butt';
@@ -553,30 +580,126 @@ export class Painter {
         ctx.stroke();
       }
       cursor += 18;
-      this._text(ctx, reading, cursor, cy, HEADER_COUNT_STYLE, rgba(tone, alpha));
-      cursor += this._fitter.width(reading, HEADER_COUNT_STYLE) + 10;
-      if (resets) {
-        this._text(ctx, resets, cursor, cy, HEADER_COUNT_STYLE, rgba(p.trimDim, 0.86));
-        cursor += this._fitter.width(resets, HEADER_COUNT_STYLE) + 10;
+      this._text(ctx, lead.usage.reading, cursor, cy, HEADER_COUNT_STYLE, rgba(tone, alpha));
+      cursor += this._fitter.width(lead.usage.reading, HEADER_COUNT_STYLE) + 10;
+      if (lead.usage.resets) {
+        this._text(ctx, lead.usage.resets, cursor, cy, HEADER_COUNT_STYLE, rgba(p.trimDim, 0.86));
+        cursor += this._fitter.width(lead.usage.resets, HEADER_COUNT_STYLE) + 10;
       }
       cursor += 4;
     }
+
+    // The machine it runs on has the right-hand end of the heading, in the
+    // columns the whole fleet shares. A member that is not there has none,
+    // and its line runs to the end as it always did.
+    const columns = crew.system ? this._systemColumns(frame, node.rect.w) : [];
+    const systemW = columns.reduce((sum, column) => sum + column.w, 0);
+    const systemX = end - systemW;
 
     // Held up is orange, as a hold is; not there, or something wrong, is red.
     const ink = crew.note.tone === 'down' ? rgba(p.red, 1)
       : crew.note.tone === 'held' ? rgba(p.orange, 1)
         : rgba(p.trimDim, 0.78);
-    const fitted = this._fitter.fit(crew.note.text, HEADER_NOTE_STYLE, end - cursor - 40);
+    const fitted = this._fitter.fit(crew.note.text, HEADER_NOTE_STYLE, systemX - cursor - (systemW > 0 ? 28 : 40));
     this._text(ctx, fitted, cursor, cy, HEADER_NOTE_STYLE, ink);
     cursor += this._fitter.width(fitted, HEADER_NOTE_STYLE) + 14;
 
-    if (end - cursor > 12) {
-      const rule = ctx.createLinearGradient(cursor, 0, end, 0);
+    const ruleEnd = systemW > 0 ? systemX - 14 : end;
+    if (ruleEnd - cursor > 12) {
+      const rule = ctx.createLinearGradient(cursor, 0, ruleEnd, 0);
       rule.addColorStop(0, rgba(p.trim, 0.26));
       rule.addColorStop(1, rgba(p.trim, 0));
       ctx.fillStyle = rule;
-      ctx.fillRect(cursor, Math.round(cy), end - cursor, 1);
+      ctx.fillRect(cursor, Math.round(cy), ruleEnd - cursor, 1);
     }
+
+    let at = systemX;
+    for (const column of columns) {
+      // A machine with no reading for a column — Windows keeps no load average — leaves its place empty.
+      const gauge = crew.system?.gauges.find((candidate) => candidate.key === column.key);
+      if (gauge) this._systemGauge(ctx, gauge, at, cy);
+      at += column.w;
+    }
+  }
+
+  /**
+   * What a member's heading says from its left-hand end — its name, how many
+   * of its engines are burning, its account's usage — and the room that takes.
+   */
+  private _memberLead(crew: Crew, width: number): MemberLead {
+    const label = this._fitter.fit(crew.name.toUpperCase(), HEADER_STYLE, Math.max(60, width * 0.4));
+    let used = this._fitter.width(label, HEADER_STYLE) + 8;
+    const count = crew.engines > 0 ? `${crew.burning}/${crew.engines}` : null;
+    used += count !== null ? this._fitter.width(count, HEADER_COUNT_STYLE) + 14 : 6;
+    const reading = `${crew.usage.label} ${crew.usage.percentText}`;
+    const resets = crew.usage.resetText === '—' ? '' : `RESETS IN ${crew.usage.resetText.toUpperCase()}`;
+    const gaugeW = 18 + this._fitter.width(reading, HEADER_COUNT_STYLE) + (resets ? 10 + this._fitter.width(resets, HEADER_COUNT_STYLE) : 0);
+    if (width - used <= gaugeW + 24) return { label, count, usage: null, width: used };
+    return { label, count, usage: { reading, resets }, width: used + gaugeW + 14 };
+  }
+
+  /**
+   * The gauges of the machine every member's heading has room for, in the
+   * order they are kept, each with the room it is given. It is one answer for
+   * the whole fleet, so that the same gauge of every member is in one column
+   * down the dashboard, to be read down as well as across: the heading with
+   * the least room decides how many there are, once its line on how the
+   * member is doing has what it needs. A gauge no member has a reading for
+   * has no column.
+   */
+  private _systemColumns(frame: Frame, width: number): SystemColumn[] {
+    const cached = this._systemColumnsOf.get(frame.model);
+    if (cached && cached.width === width) return cached.columns;
+    const measured = (frame.model.crews ?? []).filter((crew) => crew.system !== null);
+    let room = Infinity;
+    for (const crew of measured) {
+      const noteKeeps = Math.min(this._fitter.width(crew.note.text, HEADER_NOTE_STYLE), SYSTEM_NOTE_KEEPS);
+      room = Math.min(room, width - this._memberLead(crew, width).width - noteKeeps - 28);
+    }
+    const gauges = measured.flatMap((crew) => crew.system?.gauges ?? []);
+    const columns: SystemColumn[] = [];
+    for (const key of SYSTEM_ORDER) {
+      const gauge = gauges.find((candidate) => candidate.key === key);
+      if (!gauge) continue;
+      // Its name, its bar if it is a share of something, the longest it reads, and the gap after it.
+      const w = this._fitter.width(gauge.label, SYSTEM_LABEL_STYLE) + SYSTEM_PAD
+        + (SYSTEM_BARRED.has(key) ? SYSTEM_BAR_W + SYSTEM_PAD : 0)
+        + this._fitter.width(SYSTEM_WIDEST[key], HEADER_COUNT_STYLE) + SYSTEM_GAP;
+      if (w > room) break;
+      columns.push({ key, w });
+      room -= w;
+    }
+    this._systemColumnsOf.set(frame.model, { width, columns });
+    return columns;
+  }
+
+  /**
+   * One gauge of a member's machine: what it measures, a bar for one that is
+   * a share of something, and what it reads. Trim while it is in hand; yellow
+   * and red are for a reading that is the thing to look at.
+   */
+  private _systemGauge(ctx: Ctx, gauge: SystemGauge, x: number, cy: number): void {
+    const p = this._palette;
+    const tone: Rgb = gauge.tone === 'critical' ? p.red : gauge.tone === 'warn' ? p.yellow : p.trim;
+    this._text(ctx, gauge.label, x, cy, SYSTEM_LABEL_STYLE, rgba(p.trimDim, 0.8));
+    let cursor = x + this._fitter.width(gauge.label, SYSTEM_LABEL_STYLE) + SYSTEM_PAD;
+    if (SYSTEM_BARRED.has(gauge.key)) {
+      const top = Math.round(cy) - 1;
+      ctx.fillStyle = rgba(p.trim, 0.2);
+      ctx.beginPath();
+      ctx.roundRect(cursor, top, SYSTEM_BAR_W, SYSTEM_BAR_H, SYSTEM_BAR_H / 2);
+      ctx.fill();
+      const filled = SYSTEM_BAR_W * Math.min(1, Math.max(0, (gauge.fillPercent ?? 0) / 100));
+      if (filled > 0) {
+        ctx.fillStyle = rgba(gauge.tone === 'ok' ? p.trimBright : tone, gauge.tone === 'ok' ? 0.82 : 1);
+        ctx.beginPath();
+        // Never less than a dot, so a share that is small is still seen to be there.
+        ctx.roundRect(cursor, top, Math.max(SYSTEM_BAR_H, filled), SYSTEM_BAR_H, SYSTEM_BAR_H / 2);
+        ctx.fill();
+      }
+      cursor += SYSTEM_BAR_W + SYSTEM_PAD;
+    }
+    this._text(ctx, gauge.value, cursor, cy, HEADER_COUNT_STYLE, rgba(tone, gauge.tone === 'ok' ? 0.92 : 1));
   }
 
   private _header(ctx: Ctx, frame: Frame, node: HeaderNode, x: number, y: number): void {

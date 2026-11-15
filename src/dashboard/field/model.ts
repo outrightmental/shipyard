@@ -3,6 +3,7 @@ import type { BurnLevel } from '../shared/burn-level.js';
 import { engineViews, type EngineView } from '../shared/engine-view.js';
 import { formatClockTime, formatDuration, formatLogTime } from '../shared/format.js';
 import type { InboxCard, Selection } from '../shared/inbox.js';
+import { systemView, type SystemView } from '../shared/system-view.js';
 import { usageGaugeView, usageLimitUntilMs, type UsageGaugeView } from '../shared/usage-gauge.js';
 import { liveHold, vitals, type Vitals } from '../shared/vitals.js';
 import { compareProjectWork, workViews, type WorkView } from '../shared/work-view.js';
@@ -77,6 +78,10 @@ export interface Crew {
   burning: number;
   /** Its Claude account's usage window nearest its limit. */
   usage: UsageGaugeView;
+  /** The machine it runs on, as last measured: a gauge for each thing measured.
+   *  Null before the first reading, and for a member that is not there — what
+   *  its machine was doing when last heard from is not what it is doing. */
+  system: SystemView | null;
   /** What its heading says of it after the gauge, and how: `plain` is how it
    *  is doing; `held`, something is holding it up that will pass by itself or
    *  wants assigning; `down`, it is not there, or something is wrong with it. */
@@ -278,6 +283,7 @@ export function fieldModel(
       engines: count,
       burning: mine.length,
       usage: usageGaugeView(crew.usage, nowMs, usageLimitUntilMs(liveHold(crew.hold, nowMs))),
+      system: crew.online && crew.system ? systemView(crew.system) : null,
       note: crewNote(crew, mine.length, count, nowMs),
       repos: crew.repos,
       online: crew.online,

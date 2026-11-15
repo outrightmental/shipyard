@@ -338,6 +338,22 @@ html, body {
 .console-link { color: var(--shell-fg-bright); text-decoration: underline; text-decoration-color: var(--shell-line-strong); text-underline-offset: 3px; }
 .console-link:hover, .console-link:focus-visible { text-decoration-color: var(--trim-bright); outline: none; }
 
+/* A reading of a member's machine: what is measured, small, and what it reads. Trim unless it is the thing to look at. */
+.console-reading {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-1);
+  font-variant-numeric: tabular-nums;
+  text-transform: uppercase;
+  color: var(--shell-fg);
+  white-space: nowrap;
+}
+.console-reading > span { font-size: 10px; letter-spacing: .1em; color: var(--shell-fg-faint); }
+.console-reading.is-warn { color: var(--color-yellow); }
+.console-reading.is-critical { color: var(--color-red); }
+
 /* ── Controls ── */
 
 .console-button {

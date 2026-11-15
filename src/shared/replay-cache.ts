@@ -63,6 +63,7 @@ export function replayOp(event: WireEvent): ReplayOp {
       return { delete: ["work-hold"] };
     case "disk-space":
     case "usage-update":
+    case "system-update":
     case "shutdown-requested":
     case "app-shutdown":
       // Only the latest reading matters.
@@ -86,7 +87,8 @@ export function replayOp(event: WireEvent): ReplayOp {
  * engines are doing, what is holding it, that it is shutting down. They mean
  * nothing once that process has gone, so a member that starts again begins
  * with these cleared. The work itself — each project's lifecycle — and the
- * last usage reading are kept: they are still true while it restarts.
+ * last readings of its account's usage and of its machine are kept: they are
+ * still true while it restarts.
  */
 export function isProcessKey(key: string): boolean {
   return (

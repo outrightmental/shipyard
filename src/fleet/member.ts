@@ -9,6 +9,7 @@ import { shortCommit } from "../shared/release.js";
 import { GitHubTokenKeeper } from "./github-token.js";
 import { checkoutCommit, defaultHome, hostInfo, readEnrollment, readToken, REPO_ROOT, type Enrollment } from "./machine.js";
 import { PlatformClient, PlatformRefusal } from "./platform-client.js";
+import { SystemMonitor, type SystemMonitorOptions } from "./system-monitor.js";
 import { fastForwardTo, needsUpdate, updateBlockedLine, type UpdateResult } from "./update.js";
 import { Uplink } from "./uplink.js";
 
@@ -128,6 +129,10 @@ export interface FleetMemberOptions {
   log: (line: string) => void;
   home?: string;
   root?: string;
+  /** Where the engines keep their checkouts: the disk the member reports on. Its home's, when not said. */
+  diskPath?: string;
+  /** How the machine is measured (system-monitor.ts); `false` for a member that does not measure it. For tests. */
+  system?: Pick<SystemMonitorOptions, "intervalMs" | "probe" | "clock" | "lag"> | false;
   /** For tests. */
   fetchImpl?: typeof fetch;
   openSocket?: UplinkSocket;
@@ -149,6 +154,8 @@ export class FleetMember {
   readonly enrollment: Enrollment;
   readonly tokens: GitHubTokenKeeper;
   readonly uplink: Uplink;
+  /** The machine, measured and reported with everything else; null for a member told not to. */
+  readonly system: SystemMonitor | null;
   private readonly client: PlatformClient;
   private readonly machine: Partial<EnvConfig>;
   private readonly root: string;
@@ -204,6 +211,12 @@ export class FleetMember {
       onUnenrolled: (refusal) => this.unenrolled(refusal),
       log: options.log,
       ...(options.openSocket ? { openSocket: options.openSocket } : {}),
+    });
+    this.system = options.system === false ? null : new SystemMonitor({
+      emitter: options.emitter,
+      diskPath: options.diskPath ?? home,
+      platformMs: () => this.client.lastRoundTripMs,
+      ...options.system,
     });
   }
 
@@ -270,6 +283,7 @@ export class FleetMember {
     this.hooks = hooks;
     this.tokens.start(() => this.repos);
     this.uplink.start();
+    this.system?.start();
   }
 
   /** Something wrong with this member that an operator should see, or that it no longer is. */
@@ -292,6 +306,7 @@ export class FleetMember {
       if (result.ok && result.moved) this.log(`updated this checkout to ${shortCommit(result.to)}: restarting on it.`);
       else if (!result.ok) this.log(updateBlockedLine(result, this.updatingTo));
     }
+    this.system?.stop();
     this.tokens.stop();
     await this.uplink.stop();
   }

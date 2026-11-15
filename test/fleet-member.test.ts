@@ -11,11 +11,13 @@ import { GitHubTokenKeeper, RENEW_WITH_LESS_THAN_MS } from "../src/fleet/github-
 import { hostInfo, readEnrollment, readToken } from "../src/fleet/machine.js";
 import { diffRepos, envConfigOf, FleetMember, machineSettings, NOTE_UPDATE, NotEnrolled, type FleetHooks } from "../src/fleet/member.js";
 import { installService, launchdPlist, systemdUnit, windowsServiceCommand, windowsServiceScript } from "../src/fleet/service.js";
+import { availableFromVmStat, cpuUse, LoopLag, SystemMonitor, type CoreTimes, type SystemProbe } from "../src/fleet/system-monitor.js";
 import { fastForwardTo, needsUpdate, RESTART_EXIT_CODE, type GitRunner, type UpdateResult } from "../src/fleet/update.js";
 import { compactQueue } from "../src/fleet/uplink.js";
 import { startLocalPlatform, type LocalPlatform } from "../src/platform/local.js";
 import { cachedEvents } from "../src/platform/relay.js";
 import type { ConsoleState, MemberConfig } from "../src/shared/protocol.js";
+import { systemReadingOf, type SystemReading } from "../src/shared/system.js";
 
 // A fleet member (#4), tried the way it runs: a real member, over real HTTP
 // and a real socket, against the platform's own code on a port of this
@@ -107,7 +109,12 @@ interface Started {
 async function startMember(
   t: { after: (fn: () => void | Promise<void>) => void },
   h: Harness,
-  options: { commit?: string | null; update?: (target: string | null, dryRun: boolean) => UpdateResult } = {},
+  options: {
+    commit?: string | null;
+    update?: (target: string | null, dryRun: boolean) => UpdateResult;
+    /** How it measures its machine; a member of these tests does not, unless the test is about that. */
+    system?: ConstructorParameters<typeof FleetMember>[0]["system"];
+  } = {},
 ): Promise<Started & { joined: { restart: boolean } }> {
   const emitter = new EventEmitter();
   const logs: string[] = [];
@@ -118,6 +125,7 @@ async function startMember(
     log: (line) => logs.push(line),
     home: h.home,
     commit: options.commit === undefined ? RELEASE : options.commit,
+    system: options.system ?? false,
     update: async ({ target, dryRun }) => {
       updates.push({ target, dryRun: dryRun === true });
       return options.update?.(target, dryRun === true) ?? { ok: true, head: RELEASE, to: RELEASE, moved: false };
@@ -651,4 +659,157 @@ test("installing the service writes it and starts it, and a dry run does neither
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
+});
+
+// ── Its machine ──────────────────────────────────────────────────────────────
+
+const GB = 2 ** 30;
+const core = (user: number, sys: number, idle: number): CoreTimes => ({ user, nice: 0, sys, idle, irq: 0 });
+
+/** A machine that reads what the test says: four cores, 16 GB with 4 GB to be had, a disk a quarter free. */
+function fakeMachine(of: Partial<SystemProbe> & { times?: CoreTimes[][] } = {}): Partial<SystemProbe> {
+  const times = of.times ?? [[core(0, 0, 0), core(0, 0, 0), core(0, 0, 0), core(0, 0, 0)]];
+  let reading = 0;
+  return {
+    platform: "linux",
+    cpuTimes: () => times[Math.min(reading++, times.length - 1)]!.map((time) => ({ ...time })),
+    loadavg: () => [1.26, 0.84, 0.5],
+    totalMemory: () => 16 * GB,
+    availableMemory: async () => 4 * GB,
+    uptime: () => 90_061.4,
+    disk: async () => ({ freeBytes: 250 * GB, totalBytes: 1000 * GB }),
+    rss: () => 200 * 2 ** 20,
+    processUptime: () => 3_600.6,
+    ...of,
+  };
+}
+
+test("how busy the processor was is the share of its cores' time that was not idle, and its busiest core's", () => {
+  const before = [core(100, 50, 850), core(100, 50, 850)];
+  // The first core worked 300 of its next 1000, the second 900 of them.
+  const after = [core(300, 150, 1550), core(800, 250, 950)];
+  assert.deepEqual(cpuUse(before, after), { percent: 60, busiestPercent: 90 });
+  assert.deepEqual(cpuUse(before, before), { percent: null, busiestPercent: null }, "no time passed");
+  // A machine that slept: a counter that ran backwards is left out, not counted as work.
+  assert.deepEqual(cpuUse(before, [core(300, 150, 1550), core(0, 0, 0)]), { percent: 30, busiestPercent: 30 });
+  assert.deepEqual(cpuUse([], after), { percent: null, busiestPercent: null });
+});
+
+test("on a Mac the memory to be had counts what would be given up, not only what nothing is using", () => {
+  const printed = [
+    "Mach Virtual Memory Statistics: (page size of 16384 bytes)",
+    "Pages free:                               10000.",
+    "Pages active:                            400000.",
+    "Pages inactive:                          200000.",
+    "Pages speculative:                         5000.",
+    "Pages wired down:                        150000.",
+    "Pages purgeable:                           9000.",
+  ].join("\n");
+  assert.equal(availableFromVmStat(printed), (10_000 + 200_000 + 5_000) * 16_384);
+  assert.equal(availableFromVmStat("vm_stat: command not found"), null);
+  assert.equal(availableFromVmStat(""), null);
+});
+
+test("the event loop's lag is how late its timer ran at worst, and is asked for afresh each time", () => {
+  let now = 0;
+  const lag = new LoopLag(500, () => now);
+  lag.start();
+  lag.stop();
+  // Due at 500: ran on time, then 240 late, then 30 late.
+  now = 500; lag.tick();
+  now = 1240; lag.tick();
+  now = 1770; lag.tick();
+  assert.equal(lag.take(), 240);
+  assert.equal(lag.take(), 0, "what was said is not said again");
+  now = 2265; lag.tick();
+  assert.equal(lag.take(), 0, "a timer that ran early is not late");
+});
+
+test("a reading is everything measured at once, and says so where the machine keeps no such number", async () => {
+  const emitter = new EventEmitter();
+  const seen: DashboardEvent[] = [];
+  emitter.subscribe((event) => seen.push(event));
+  let now = 0;
+  const lag = new LoopLag(500, () => now);
+  const monitor = new SystemMonitor({
+    emitter, diskPath: "/checkouts", platformMs: () => 48, clock: () => 1_700_000_000_000, lag,
+    probe: fakeMachine({ times: [
+      [core(0, 0, 0), core(0, 0, 0), core(0, 0, 0), core(0, 0, 0)],
+      [core(500, 100, 400), core(100, 0, 900), core(0, 0, 1000), core(200, 100, 700)],
+    ] }),
+  });
+
+  // The first has nothing before it to say how busy the processor was.
+  const first = await monitor.read();
+  assert.deepEqual([first.cpu.percent, first.cpu.busiestPercent, first.cpu.cores], [null, null, 4]);
+
+  now = 800; lag.tick();
+  const reading = (await monitor.report())!;
+  assert.deepEqual(reading, {
+    atMs: 1_700_000_000_000,
+    cpu: { percent: 25, busiestPercent: 60, cores: 4, load: [1.3, 0.8, 0.5] },
+    memory: { usedBytes: 12 * GB, totalBytes: 16 * GB },
+    disk: { freeBytes: 250 * GB, totalBytes: 1000 * GB },
+    process: { rssBytes: 200 * 2 ** 20, loopLagMs: 800, uptimeSeconds: 3601 },
+    platformMs: 48,
+    uptimeSeconds: 90_061,
+  } satisfies SystemReading);
+  // It is reported as it was read, and is a reading to whoever receives it.
+  assert.deepEqual(seen.map((event) => event.type), ["system-update"]);
+  assert.deepEqual(systemReadingOf(seen[0]!.data), reading);
+
+  // Windows keeps no load average; a disk that cannot be read is not a disk with nothing on it.
+  const windows = new SystemMonitor({
+    emitter: new EventEmitter(), diskPath: "C:/checkouts",
+    probe: fakeMachine({ platform: "win32", loadavg: () => [0, 0, 0], disk: async () => { throw new Error("EPERM"); } }),
+  });
+  const there = await windows.read();
+  assert.deepEqual([there.cpu.load, there.disk, there.platformMs], [null, null, null]);
+
+  // Measuring is never what stops a member: a reading that cannot be taken is not reported.
+  const broken = new SystemMonitor({
+    emitter, diskPath: "/checkouts",
+    probe: fakeMachine({ cpuTimes: () => { throw new Error("no such thing"); } }),
+  });
+  assert.equal(await broken.report(), null);
+  assert.equal(seen.length, 1);
+});
+
+test("this machine can be measured", async () => {
+  const monitor = new SystemMonitor({ emitter: new EventEmitter(), diskPath: os.tmpdir() });
+  await monitor.read();
+  const reading = await monitor.read();
+  assert.ok(reading.cpu.cores >= 1);
+  assert.ok(reading.memory.totalBytes > 0 && reading.memory.usedBytes > 0 && reading.memory.usedBytes <= reading.memory.totalBytes);
+  assert.ok(reading.disk !== null && reading.disk.totalBytes >= reading.disk.freeBytes, "the disk the temporary directory is on");
+  assert.equal(reading.cpu.load === null, process.platform === "win32");
+  assert.ok(reading.process.rssBytes > 0 && reading.uptimeSeconds > 0);
+  assert.deepEqual(systemReadingOf(JSON.parse(JSON.stringify(reading))), reading, "and survives the journey");
+});
+
+test("a member reports its machine with everything else, and a console is brought up to date with it", async (t) => {
+  const h = await harness(t);
+  const enrolled = await enroll(h);
+  const { member } = await startMember(t, h, { system: { intervalMs: 40, probe: fakeMachine() } });
+  assert.ok(member.system !== null);
+
+  await until("its machine to reach the platform", async () =>
+    (await cachedEvents(h.platform.p, enrolled.memberId)).some((event) => event.type === "system-update"));
+  const cached = (await h.state()).cached[enrolled.memberId] ?? [];
+  const reading = systemReadingOf(cached.find((event) => event.type === "system-update")?.data);
+  assert.equal(reading?.memory.totalBytes, 16 * GB);
+  assert.deepEqual(reading?.disk, { freeBytes: 250 * GB, totalBytes: 1000 * GB });
+  // How far away Shipyard is is measured on the calls the member makes anyway.
+  assert.ok(typeof reading?.platformMs === "number" && reading.platformMs >= 0);
+  assert.equal(cached.filter((event) => event.type === "system-update").length, 1, "the platform keeps the latest, not each");
+
+  // Its reports say it is there: a member that measures needs no heartbeat besides.
+  assert.equal((await h.state()).members[0]?.lastSeenAt !== null, true);
+
+  // Stopped with the member, so nothing is reported by a process on its way out.
+  await member.finish();
+  const count = async () => (await h.state()).cached[enrolled.memberId]?.find((event) => event.type === "system-update")?.timestamp;
+  const last = await count();
+  await new Promise((resolve) => { setTimeout(resolve, 150); });
+  assert.equal(await count(), last);
 });

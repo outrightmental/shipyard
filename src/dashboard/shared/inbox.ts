@@ -537,6 +537,8 @@ export function inspect(
     crews?: ReadonlyArray<{
       id: string; name: string; engines: number; burning: number; repos: readonly string[];
       note: { text: string }; usage: { heading: string; title: string };
+      /** Its machine as last measured (system-view.ts); null when it has not been, or the member is not there. */
+      system?: { gauges: ReadonlyArray<{ detail: string }> } | null;
     }> | null;
   },
 ): Inspection | null {
@@ -577,6 +579,8 @@ export function inspect(
           crew.note.text,
           crew.usage.title,
           crew.repos.length === 0 ? 'Assigned no repositories.' : `Works ${crew.repos.join(', ')}.`,
+          // Everything measured of its machine, where the heading has room for only some of it.
+          ...(crew.system?.gauges.map((gauge) => `${gauge.detail}.`) ?? []),
         ],
         links: [],
       };

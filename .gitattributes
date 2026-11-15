@@ -1,0 +1,8 @@
+# One line ending everywhere. A fleet member updates itself by fast-forwarding
+# its checkout, and refuses to when a tracked file has changed: a checkout that
+# converted line endings on the way in must never look changed. Terraform
+# also hashes the files it uploads, and a hash must not depend on the machine.
+* text=auto eol=lf
+*.png binary
+*.mp4 binary
+*.webm binary

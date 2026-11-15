@@ -47,6 +47,40 @@ export interface Secrets {
   delete(name: string): Promise<void>;
 }
 
+/**
+ * Secrets kept in memory for a while once read, so the function does not ask
+ * its secret store for the app's key on every request.
+ *
+ * Only what was found is kept. That a secret is missing is asked again every
+ * time: it is rare, and "missing" remembered would outlast the moment the
+ * secret is written by another instance of the function. What is kept is
+ * safe to keep only because a name's value never changes — see
+ * `secretNameFor` in github-app.ts.
+ */
+export function cachedSecrets(inner: Secrets, options: { keepMs?: number; now?: () => number } = {}): Secrets {
+  const keepMs = options.keepMs ?? 5 * 60_000;
+  const now = options.now ?? Date.now;
+  const kept = new Map<string, { value: string; atMs: number }>();
+  return {
+    async get(name) {
+      const hit = kept.get(name);
+      if (hit && now() - hit.atMs < keepMs) return hit.value;
+      const value = await inner.get(name);
+      if (value === null) kept.delete(name);
+      else kept.set(name, { value, atMs: now() });
+      return value;
+    },
+    async put(name, value) {
+      await inner.put(name, value);
+      kept.set(name, { value, atMs: now() });
+    },
+    async delete(name) {
+      await inner.delete(name);
+      kept.delete(name);
+    },
+  };
+}
+
 /** A signed-in operator. */
 export interface Operator {
   sub: string;

@@ -6,7 +6,7 @@ import { commitOf } from "../shared/release.js";
 import { pushToFleet } from "./fleet.js";
 import { handleHttp, type HttpRequest } from "./http.js";
 import { createJwtVerifier } from "./jwt.js";
-import { randomHex, type Platform, type Secrets, type Sockets } from "./platform.js";
+import { cachedSecrets, randomHex, type Platform, type Secrets, type Sockets } from "./platform.js";
 import { DynamoTable } from "./store.js";
 import { tick } from "./tick.js";
 import { handleSocket } from "./ws.js";
@@ -51,29 +51,22 @@ function awsSockets(endpoint: string): Sockets {
   };
 }
 
-/** SSM SecureStrings under the platform's prefix. Read once per container and kept for a few minutes. */
+/** SSM SecureStrings under the platform's prefix, as they are in SSM right now. */
 function awsSecrets(prefix: string): Secrets {
   const client = new SSMClient({});
-  const cache = new Map<string, { value: string | null; atMs: number }>();
-  const KEEP_MS = 5 * 60_000;
   const nameOf = (name: string) => `${prefix}${name}`;
   return {
     async get(name) {
-      const kept = cache.get(name);
-      if (kept && Date.now() - kept.atMs < KEEP_MS) return kept.value;
-      let value: string | null = null;
       try {
         const result = await client.send(new GetParameterCommand({ Name: nameOf(name), WithDecryption: true }));
-        value = result.Parameter?.Value ?? null;
+        return result.Parameter?.Value ?? null;
       } catch (error) {
         if ((error as { name?: string }).name !== "ParameterNotFound") throw error;
+        return null;
       }
-      cache.set(name, { value, atMs: Date.now() });
-      return value;
     },
     async put(name, value) {
       await client.send(new PutParameterCommand({ Name: nameOf(name), Value: value, Type: "SecureString", Overwrite: true }));
-      cache.set(name, { value, atMs: Date.now() });
     },
     async delete(name) {
       try {
@@ -81,7 +74,6 @@ function awsSecrets(prefix: string): Secrets {
       } catch (error) {
         if ((error as { name?: string }).name !== "ParameterNotFound") throw error;
       }
-      cache.set(name, { value: null, atMs: Date.now() });
     },
   };
 }
@@ -93,7 +85,8 @@ function awsPlatform(): Platform {
   platform ??= {
     table: new DynamoTable(required("SHIPYARD_TABLE")),
     sockets: awsSockets(required("SHIPYARD_WS_ENDPOINT")),
-    secrets: awsSecrets(required("SHIPYARD_SSM_PREFIX")),
+    // Kept in memory once read: safe because a name's value never changes (cachedSecrets).
+    secrets: cachedSecrets(awsSecrets(required("SHIPYARD_SSM_PREFIX"))),
     fetch: (input, init) => fetch(input, init),
     now: () => Date.now(),
     random: randomHex,

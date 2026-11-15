@@ -33,8 +33,26 @@ import type { Row } from "./store.js";
 const CONFIG = "CONFIG";
 const APP = "github";
 const PENDING = "github-pending";
-/** The name of the app's credentials among the platform's secrets. */
-export const APP_SECRET_NAME = "github-app";
+/**
+ * Where an app's credentials are kept among the platform's secrets: under a
+ * name of the app's own, so what is kept under a name never changes.
+ *
+ * It was one name for whichever app was connected, and the function keeps a
+ * secret it has read in memory for a few minutes. On 2026-11-15 an operator
+ * connected an app, disconnected it, and connected another: for five minutes
+ * every instance of the function that had read the first app's key went on
+ * signing the second app's requests with it, and GitHub refused them all
+ * ("A JSON web token could not be decoded"). With a name per app there is
+ * nothing to go stale: a different app is a different name, read afresh.
+ */
+export const secretNameFor = (appId: number): string => `github-app-${appId}`;
+
+/**
+ * The one name the app's credentials were kept under before each had its own.
+ * Read for an app that has none under its own name — the one connected
+ * before this — and never written.
+ */
+export const LEGACY_SECRET_NAME = "github-app";
 const GITHUB_API = "https://api.github.com";
 const PENDING_MS = 60 * 60_000;
 
@@ -93,8 +111,8 @@ async function appRow(p: Platform): Promise<AppRow | null> {
   return (await p.table.get(CONFIG, APP)) as AppRow | null;
 }
 
-async function appSecrets(p: Platform): Promise<AppSecrets | null> {
-  const raw = await p.secrets.get(APP_SECRET_NAME);
+async function appSecrets(p: Platform, app: Pick<AppRow, "appId">): Promise<AppSecrets | null> {
+  const raw = (await p.secrets.get(secretNameFor(app.appId))) ?? (await p.secrets.get(LEGACY_SECRET_NAME));
   if (!raw) return null;
   try {
     return JSON.parse(raw) as AppSecrets;
@@ -230,7 +248,7 @@ export async function completeManifest(p: Platform, input: { code?: unknown; sta
   };
   const secrets: AppSecrets = { pem: app.pem, webhookSecret: app.webhook_secret ?? "", clientSecret: app.client_secret };
   // The key first: an app in the table whose key was never kept could do nothing.
-  await p.secrets.put(APP_SECRET_NAME, JSON.stringify(secrets));
+  await p.secrets.put(secretNameFor(app.id), JSON.stringify(secrets));
   const row: AppRow = {
     PK: CONFIG,
     SK: APP,
@@ -258,9 +276,11 @@ export async function completeManifest(p: Platform, input: { code?: unknown; sta
  * the operator deletes it there; this only makes Shipyard stop being it.
  */
 export async function disconnectGithub(p: Platform): Promise<void> {
+  const row = await appRow(p);
   await p.table.delete(CONFIG, APP);
   await p.table.delete(CONFIG, PENDING);
-  await p.secrets.delete(APP_SECRET_NAME);
+  if (row) await p.secrets.delete(secretNameFor(row.appId));
+  await p.secrets.delete(LEGACY_SECRET_NAME);
 }
 
 // ── Being the app ────────────────────────────────────────────────────────────
@@ -291,7 +311,7 @@ export function appJwt(appId: number, pem: string, nowMs: number): string {
 async function asApp(p: Platform): Promise<{ row: AppRow; jwt: string }> {
   const row = await appRow(p);
   if (!row) return refuse(409, "GITHUB_NOT_CONNECTED", "Shipyard is not connected to GitHub", "connect it in the console: Repositories, Connect GitHub");
-  const secrets = await appSecrets(p);
+  const secrets = await appSecrets(p, row);
   if (!secrets?.pem) return refuse(500, "GITHUB_KEY_MISSING", "the GitHub App's key is missing", "disconnect GitHub in the console and connect it again");
   return { row, jwt: appJwt(row.appId, secrets.pem, p.now()) };
 }
@@ -386,7 +406,8 @@ export async function listAvailableRepos(p: Platform): Promise<AvailableRepo[]> 
 
 /** Whether `signature` (the `X-Hub-Signature-256` header) is GitHub's over `body` with the app's webhook secret. */
 export async function verifyWebhook(p: Platform, body: string, signature: string | undefined): Promise<boolean> {
-  const secrets = await appSecrets(p);
+  const row = await appRow(p);
+  const secrets = row ? await appSecrets(p, row) : null;
   if (!secrets?.webhookSecret || !signature?.startsWith("sha256=")) return false;
   const expected = createHmac("sha256", secrets.webhookSecret).update(body).digest();
   const given = Buffer.from(signature.slice("sha256=".length), "hex");

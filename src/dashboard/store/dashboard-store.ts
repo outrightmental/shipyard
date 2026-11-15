@@ -21,7 +21,8 @@ interface DashboardEvent {
 const BROADCAST_FANFARE_MS = 3000;
 const BROADCAST_MAX_ITEMS = 15;
 
-function initCylinders(n: number): CylinderState[] {
+/** A pool of `n` engines with nothing yet heard from any of them. */
+export function initCylinders(n: number): CylinderState[] {
   return Array.from({ length: n }, (_, i) => {
     // Cylinders have no color of their own — they adopt the stable color of
     // the issue they are working, and are neutral while idle (issue #236).
@@ -134,6 +135,10 @@ export function initialState(): DashboardState {
     owner: '',
     repo: '',
     title: '',
+    brand: 'Yoke',
+    fleet: null,
+    notices: [],
+    readOnly: false,
   };
 }
 
@@ -172,6 +177,7 @@ export function dashboardReducer(state: DashboardState, event: DashboardEvent): 
     // `pull-request-approval` events (#276).
     case 'pull-request-approve': return state;
     case 'pull-request-approval': return applyPullRequestApproval(state, event.data, event.timestamp);
+    case 'project-removed':    return applyProjectRemoved(state, event.data, atMs);
     case 'broadcast-github-activity':
     case 'broadcast-commit':
     case 'broadcast-pr-update':
@@ -497,9 +503,14 @@ function applySnapshotUpdate(state: DashboardState, data: Record<string, unknown
 function applyLifecycleUpdate(state: DashboardState, data: Record<string, unknown>): DashboardState {
   const repo = (data['repo'] as string) || '';
   const incoming = Array.isArray(data['pairs']) ? (data['pairs'] as LifecyclePair[]) : [];
+  // Work in a repository no fleet member is assigned says so on every pair
+  // (the platform reads such a repository itself, src/platform/tick.ts).
+  const unassigned = data['unassigned'] === true;
   // Tag every pair with its project so the pill can build the right GitHub URL
   // and (in multi-project mode) show which repo it belongs to.
-  const pairs = repo ? incoming.map((p) => ({ ...p, repo })) : incoming;
+  const pairs = repo || unassigned
+    ? incoming.map((p) => ({ ...p, ...(repo ? { repo } : {}), ...(unassigned ? { unassigned: true } : {}) }))
+    : incoming;
 
   // Replace only this project's slice; keep the others intact, then flatten in a
   // stable project order so multiple projects coexist in one lifecycle pane.
@@ -515,6 +526,38 @@ function applyLifecycleUpdate(state: DashboardState, data: Record<string, unknow
     approvalPresses: pressesStillListed(state.approvalPresses, repo, pairs),
     failures: failuresStillListed(state.failures, repo, pairs),
   };
+}
+
+/**
+ * A repository is no longer this pool's: Shipyard assigned it elsewhere, or
+ * stopped subscribing to it. Its work leaves the field with it, and so does
+ * what was being followed about that work.
+ */
+function applyProjectRemoved(state: DashboardState, data: Record<string, unknown>, atMs: number): DashboardState {
+  const repo = (data['repo'] as string) || '';
+  if (!state.lifecycleByRepo.has(repo) && !state.sessionCountByRepo.has(repo)) return state;
+  const lifecycleByRepo = new Map(state.lifecycleByRepo);
+  lifecycleByRepo.delete(repo);
+  const lastLifecyclePairs: LifecyclePair[] = [];
+  for (const slice of lifecycleByRepo.values()) lastLifecyclePairs.push(...slice);
+  const sessionCountByRepo = new Map(state.sessionCountByRepo);
+  sessionCountByRepo.delete(repo);
+  let sessionCount = 0;
+  for (const n of sessionCountByRepo.values()) sessionCount += n;
+  return addToStream(
+    {
+      ...state,
+      lifecycleByRepo,
+      lastLifecyclePairs,
+      sessionCountByRepo,
+      sessionCount,
+      approvalPresses: pressesStillListed(state.approvalPresses, repo, []),
+      failures: failuresStillListed(state.failures, repo, []),
+    },
+    atMs,
+    `${repo} is no longer assigned here`,
+    -1, 'info', repo,
+  );
 }
 
 /** The failures left once a project's lifecycle no longer lists their work —
@@ -858,6 +901,36 @@ function applyWorkflowApproval(state: DashboardState, data: Record<string, unkno
   return { ...state, broadcastQueue: [...state.broadcastQueue, item] };
 }
 
+/**
+ * The state a dashboard is brought up to date with from a replay cache: a
+ * fresh state with `cachedEvents` applied in order, on top of what must
+ * outlive a rebuild from `previous`.
+ *
+ * This dashboard's own Approve presses do (#278), so a reconnect never makes
+ * one look as if it never happened. So do the failures it heard of: a replay
+ * holds only each engine's latest event, and by then the failed one has gone
+ * idle. And each approval's status keeps the time it first arrived, so a
+ * replayed answer is not taken for a new one (#276).
+ *
+ * `prepare` sets what the cache does not say before the events are applied:
+ * the dashboard's title, the size of its pool.
+ */
+export function replayState(
+  previous: DashboardState,
+  cachedEvents: readonly DashboardEvent[],
+  prepare?: (state: DashboardState) => void,
+): DashboardState {
+  let state = initialState();
+  // The connection is the socket's to say, not the replay's: a rebuild that
+  // reset it would leave the indicator stuck on "Connecting…".
+  state.connection = previous.connection;
+  state.approvalPresses = previous.approvalPresses;
+  state.failures = previous.failures;
+  prepare?.(state);
+  for (const event of cachedEvents) state = dashboardReducer(state, event);
+  return { ...state, approvals: keepArrivalTimes(state.approvals, previous.approvals, state.approvalPresses) };
+}
+
 // ── Store class ───────────────────────────────────────────────────────────────
 
 type Listener = (state: DashboardState) => void;
@@ -943,36 +1016,26 @@ export class DashboardStore {
         maxConcurrency?: number;
         multiProject?: boolean;
         projects?: string[];
+        readOnly?: boolean;
+        brand?: string;
         cachedEvents?: DashboardEvent[];
       };
 
-      // Preserve the current connection status so that a reconnect-triggered
-      // bootstrap doesn't overwrite 'disconnected' with the initialState default
-      // of 'connecting', which would leave the indicator stuck on "Connecting…"
-      // if the subsequent reconnect also fails.
-      const currentConnection = this._state.connection;
-      let state = initialState();
-      state.connection = currentConnection;
-      // This dashboard's presses outlive the rebuild (#278), so a reconnect
-      // never makes one look as if it never happened.
-      state.approvalPresses = this._state.approvalPresses;
-      // So do the failures it heard of: the server replays only each
-      // cylinder's latest event, and by then the failed one has gone idle.
-      state.failures = this._state.failures;
-      state.owner = data.owner ?? '';
-      state.repo = data.repo ?? '';
-      state.title = data.dashboardTitle ?? data.repo ?? '';
-      state.multiProject = data.multiProject ?? false;
-      if (typeof data.maxConcurrency === 'number') {
-        state.maxConcurrency = data.maxConcurrency;
-        state.cylinders = initCylinders(data.maxConcurrency);
-      }
       const cachedEvents = data.cachedEvents ?? [];
-      for (const event of cachedEvents) {
-        state = dashboardReducer(state, event);
-      }
+      const state = replayState(this._state, cachedEvents, (fresh) => {
+        fresh.owner = data.owner ?? '';
+        fresh.repo = data.repo ?? '';
+        fresh.title = data.dashboardTitle ?? data.repo ?? '';
+        fresh.multiProject = data.multiProject ?? false;
+        // A fleet member's own screen: it shows, and takes no decisions.
+        fresh.readOnly = data.readOnly === true;
+        fresh.brand = data.brand || 'Yoke';
+        if (typeof data.maxConcurrency === 'number') {
+          fresh.maxConcurrency = data.maxConcurrency;
+          fresh.cylinders = initCylinders(data.maxConcurrency);
+        }
+      });
       this._bootstrapped = new Set(cachedEvents.map(eventIdentity));
-      state = { ...state, approvals: keepArrivalTimes(state.approvals, this._state.approvals, state.approvalPresses) };
       this._setState(state);
     } catch (err) {
       console.error('[DashboardStore] bootstrap failed:', err);
@@ -986,6 +1049,9 @@ export class DashboardStore {
    * when the connection comes back.
    */
   approvePullRequest(target: ApproveTarget): boolean {
+    // A fleet member's own screen takes no decisions: its button cannot be
+    // pressed, and a press that reached here anyway is not sent.
+    if (this._state.readOnly) return false;
     const sent = this._wsClient?.send(approveRequestMessage(target)) ?? false;
     this._setState(recordApprovalPress(this._state, target, sent, Date.now()));
     return sent;

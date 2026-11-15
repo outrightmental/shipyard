@@ -11,8 +11,9 @@ import type { PillActivity } from './pill-activity.js';
  * - `queued`: yoke burns on it next, with nothing but yoke's own pipeline in
  *   the way: waiting on its checks, an approved merge, an open PR or a ready
  *   issue waiting its turn for an engine.
- * - `waiting`: parked until someone moves first: a human reviewer, or the
- *   issues blocking it.
+ * - `waiting`: parked until someone moves first: a human reviewer, the
+ *   issues blocking it, or — on Shipyard — an operator to assign its
+ *   repository to a fleet member.
  * - `cold`: nothing is coming: an engine's action has ended (done, failed,
  *   shut down), the PR is manual, merged, or out of the queue, or yoke has
  *   shut down.
@@ -84,6 +85,12 @@ export function pillBurnLevel(
   dark: boolean,
 ): BurnLevel {
   if (dark) return 'cold';
+  // Work in a repository no fleet member is assigned waits on an operator to
+  // assign one, whatever its checks or its reviewers are doing: nothing is
+  // coming for it until then.
+  if (pair.unassigned && activity !== 'working') {
+    return activity === 'manual' || pair.prPhase === 'completed' || pair.prPhase === 'inactive' ? 'cold' : 'waiting';
+  }
   switch (activity) {
     case 'working': return 'burning';
     case 'waiting-ci': return 'queued';

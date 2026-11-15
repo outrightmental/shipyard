@@ -209,6 +209,11 @@ export function workStatus(params: {
       ? { text: failed, tone: 'problem', signal: 'error' }
       : { text: `${failed} — yoke retries it`, tone: 'problem', signal: 'error', brief: failed };
   }
+  // Neutral, and said once per line in a word: that its repository is
+  // assigned to no one is a card in the inbox, in a signal, said once.
+  if (pair.unassigned) {
+    return { text: 'unassigned — no fleet member works this repository', tone: 'plain', signal: null, brief: 'unassigned' };
+  }
   if (pair.prPhase === 'planning') return { text: dark ? 'shut down' : 'implementing…', tone: 'plain', signal: null };
 
   if (!pr) {

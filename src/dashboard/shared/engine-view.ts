@@ -14,8 +14,15 @@ export type EngineParked = 'usage-limit' | 'rate-limit' | null;
  * holds none.
  */
 export interface EngineView {
-  /** Counted from 0; the field labels it `index + 1`, as the log does. */
+  /** Counted from 0, across every engine on the field: what tells it from
+   *  every other. */
   index: number;
+  /** The number on its ring, from 1: `index + 1` on a pool's own dashboard,
+   *  as the log says it, and its number within its member's pool on
+   *  Shipyard's, where every member has an engine 1. */
+  label: number;
+  /** On Shipyard's dashboard, the fleet member whose engine it is; else null. */
+  memberId: string | null;
   status: CylinderState['status'];
   /** Its work's hue for as long as it holds the work; trim gray with none (#280, #286). */
   color: IssueColor;
@@ -58,6 +65,8 @@ export function engineView(cyl: CylinderState, nowMs: number): EngineView {
   const color = cylinderColor(cyl);
   const base = {
     index: cyl.index - 1,
+    label: cyl.memberIndex ?? cyl.index,
+    memberId: cyl.memberId ?? null,
     status: cyl.status,
     color,
     hasWork: cyl.color !== null,

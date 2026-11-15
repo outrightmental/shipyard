@@ -7,7 +7,7 @@ It is now two things:
 - **The field** — one `<canvas>` the size of the window, on which the state of the whole run is drawn.
 - **The inbox** — every interaction the Dashboard offers, as cards, down the right-hand edge of the screen.
 
-The README's [Dashboard](../README.md#dashboard) section says what each shows. This document says how they are built, and why that way.
+The README's [Dashboard](YOKE.md#dashboard) section says what each shows. This document says how they are built, and why that way.
 
 ## The idea: heat rises
 

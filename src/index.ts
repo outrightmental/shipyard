@@ -32,6 +32,7 @@ import {
 } from "./checkout-reaper.js";
 import { formatBytes } from "./fs-utils.js";
 import {
+  DEFAULT_CHECKOUT_RETENTION_HOURS,
   loadEnvConfig,
   resolveGitHubToken,
   resolveMinFreeDiskBytes,
@@ -62,6 +63,10 @@ import { reconcileSessions } from "./reconcile.js";
 import { MergedIssueGrace, MERGED_ISSUE_GRACE_MS } from "./merge-grace.js";
 import { FileSessionStore, migrateLegacySessionStore } from "./session-store.js";
 import { DashboardServer } from "./dashboard-server.js";
+import { FleetMember, NOTE_CLAUDE, NotEnrolled, projectOf } from "./fleet/member.js";
+import { RESTART_EXIT_CODE } from "./fleet/update.js";
+import type { GitHubTokenSource } from "./github-gateway.js";
+import type { MemberConfig } from "./shared/protocol.js";
 import { DashboardApprovals, decideApproval } from "./dashboard-approval.js";
 import { AnthropicUsageMonitor, USAGE_POLL_INTERVAL_MS } from "./anthropic-usage.js";
 import { resolveDashboardTitle } from "./dashboard-title.js";
@@ -312,7 +317,7 @@ interface ProjectContext {
   /** "owner/repo" — the project identity shown on every dashboard element. */
   repoKey: string;
   githubGateway: GitHubApiGateway;
-  githubToken: string;
+  githubToken: GitHubTokenSource;
   gitHubClient: GitHubClient;
   sessionStore: FileSessionStore;
   claudeAgentClient: ReturnType<typeof createClaudeAgentClient>;
@@ -1409,19 +1414,67 @@ async function main(): Promise<void> {
   const dryRun = argv.includes("--dry-run");
   const noBrowser = argv.includes("--no-browser");
 
-  const envConfig = loadEnvConfig();
+  const emitter = globalEventEmitter;
+  const shutdownSignal = { requested: false };
+
+  // ── As a fleet member: what to be comes from Shipyard, not from env.yaml ──
+  // `--fleet` is how a machine's service starts this (tools/fleet-runner.mjs).
+  // The member says who it is and is told the size of its pool and the
+  // repositories assigned to it; it holds no GitHub token, and asks Shipyard
+  // for one. With a checkout on another commit than Shipyard runs, and
+  // nothing started yet, it moves the checkout and exits to be started again.
+  let fleet: FleetMember | null = null;
+  if (argv.includes("--fleet")) {
+    try {
+      fleet = new FleetMember({ emitter, log: write });
+    } catch (error) {
+      if (!(error instanceof NotEnrolled)) throw error;
+      // Not a failure to be retried: nothing changes until someone enrolls it.
+      console.error(`\n${error.message}\n`);
+      setExitReason("not enrolled");
+      process.exit(0);
+    }
+    write(`fleet member ${fleet.enrollment.name} (${fleet.enrollment.memberId}) of ${fleet.enrollment.platformUrl}`);
+    try {
+      if ((await fleet.join()).restart) {
+        setExitReason("updated to Shipyard's commit");
+        process.exit(RESTART_EXIT_CODE);
+      }
+    } catch (error) {
+      if (!(error instanceof NotEnrolled)) throw error;
+      console.error(`\n${error.message}\n`);
+      setExitReason("no longer enrolled");
+      process.exit(0);
+    }
+  }
+  /** What the process exits with once a fleet member's engines have stopped: to be started again, or for good. */
+  let fleetExitCode = 0;
+
+  const envConfig = fleet ? fleet.envConfig() : loadEnvConfig();
 
   // ── Validate Claude authentication before opening the browser ─────────────
-  const authResult = await validateClaudeAuth();
+  let authResult = await validateClaudeAuth();
+  if (!authResult.valid && fleet) {
+    // A member with no Claude login has nothing to work with, but exiting
+    // would only have its service start it again: it says so where an
+    // operator will see it, and waits for someone to log in.
+    const problem = `the Claude CLI is not logged in on this machine (${authResult.reason ?? "no credentials"}): run  claude login  there`;
+    write(`${problem}. Waiting for it.`);
+    while (!authResult.valid) {
+      fleet.setNote(NOTE_CLAUDE, problem);
+      await fleet.beat();
+      await delay(20_000);
+      authResult = await validateClaudeAuth();
+    }
+    fleet.setNote(NOTE_CLAUDE, null);
+    write("the Claude CLI is logged in: carrying on.");
+  }
   if (!authResult.valid) {
     console.error(`\nError: Claude authentication is invalid or expired.`);
     console.error(`Please run:  claude auth login`);
     console.error(`Then restart yoke.\n`);
     process.exit(1);
   }
-
-  const emitter = globalEventEmitter;
-  const shutdownSignal = { requested: false };
 
   // Listen for Escape key on the console to trigger graceful shutdown
   if (process.stdin.isTTY) {
@@ -1466,11 +1519,17 @@ async function main(): Promise<void> {
   // ── Build one runtime context per configured project ──────────────────────
   const globalMaxConcurrency = envConfig.max_concurrency ?? 3;
   const globalCycleMinimumMs = Math.round((envConfig.cycle_minimum_seconds ?? 60) * 1000);
-  const multiProject = envConfig.projects.length > 1;
+  // A fleet member's repositories change while it runs, so its dashboard
+  // always says which repository a piece of work is in.
+  const multiProject = fleet !== null || envConfig.projects.length > 1;
 
-  const contexts: ProjectContext[] = envConfig.projects.map((projectEnvConfig) => {
+  const makeContext = (projectEnvConfig: ProjectEnvConfig): ProjectContext => {
     const config = buildProjectConfig(projectEnvConfig, envConfig, { once, dryRun, noBrowser });
-    const githubToken = resolveGitHubToken(envConfig, projectEnvConfig.github_token_name);
+    // A fleet member's token is Shipyard's to mint and lasts an hour: every
+    // request and every git command reads the one that is good at the time.
+    const githubToken: GitHubTokenSource = fleet
+      ? fleet.tokens.current
+      : resolveGitHubToken(envConfig, projectEnvConfig.github_token_name);
     const githubGateway = new GitHubApiGateway({
       token: githubToken,
       apiBaseUrl: envConfig.github_api_base_url ?? "https://api.github.com",
@@ -1504,31 +1563,48 @@ async function main(): Promise<void> {
       maintenanceSnapshot: null,
       mergedIssueGrace: new MergedIssueGrace(),
     } satisfies ProjectContext;
-  });
+  };
+  // Not a copy of anything: the engines read this array afresh every cycle,
+  // so a project added to it or taken out of it while they run is one they
+  // start or stop working at their next cycle.
+  const contexts: ProjectContext[] = envConfig.projects.map(makeContext);
 
   // ── Resolve the single dashboard title ────────────────────────────────────
-  const first = contexts[0]!;
-  const firstProjectEnv = envConfig.projects[0]!;
+  // A fleet member may be assigned nothing yet, and so have no first project.
+  const first = contexts[0];
+  const firstProjectEnv = envConfig.projects[0];
   const dashboardTitle = resolveDashboardTitle(envConfig.dashboard_title);
 
   // ── Start the single dashboard server ─────────────────────────────────────
-  const dashboardPort = envConfig.dashboard_port ?? firstProjectEnv.dashboard_port ?? 3000;
+  const dashboardPort = envConfig.dashboard_port ?? firstProjectEnv?.dashboard_port ?? 3000;
   const dashboard = new DashboardServer({
     port: dashboardPort,
-    owner: multiProject ? "" : first.config.owner,
-    repo: multiProject ? "" : first.config.repo,
+    owner: multiProject || !first ? "" : first.config.owner,
+    repo: multiProject || !first ? "" : first.config.repo,
     dashboardTitle,
     maxConcurrency: globalMaxConcurrency,
     multiProject,
     projects: contexts.map((c) => c.repoKey),
     eventEmitter: emitter,
+    // A fleet member's own screen shows what it is working on, and takes no
+    // decisions: those are made in Shipyard.
+    ...(fleet ? { readOnly: true, brand: "Shipyard" } : {}),
   });
   let dashboardReady = false;
   try {
     await dashboard.initialize();
     await dashboard.start();
     if (!noBrowser) {
-      await dashboard.openBrowser();
+      if (fleet) {
+        // A member is started again on every update, and the page it had open
+        // finds the new one by itself: a new window is opened only when, a few
+        // seconds on, nothing has.
+        setTimeout(() => {
+          if (dashboard.clientCount() === 0) void dashboard.openBrowser().catch(() => undefined);
+        }, 8_000).unref();
+      } else {
+        await dashboard.openBrowser();
+      }
     }
     dashboardReady = true;
   } catch (error) {
@@ -1573,9 +1649,11 @@ async function main(): Promise<void> {
       (modeNotes.length > 0 ? ` · mode: ${modeNotes.join(", ")}` : ""),
   );
   const minFreeBytes = resolveMinFreeDiskBytes(envConfig);
+  const retentionMs = first?.config.checkoutRetentionMs
+    ?? Math.round((envConfig.checkout_retention_hours ?? DEFAULT_CHECKOUT_RETENTION_HOURS) * 3_600_000);
   write(
-    `checkouts: ${defaultCheckoutRootDir()} · idle ones kept ${formatDuration(first.config.checkoutRetentionMs)}` +
-      (contexts.some((c) => c.config.checkoutRetentionMs !== first.config.checkoutRetentionMs)
+    `checkouts: ${defaultCheckoutRootDir()} · idle ones kept ${formatDuration(retentionMs)}` +
+      (contexts.some((c) => c.config.checkoutRetentionMs !== retentionMs)
         ? " (varies by project)"
         : "") +
       ` · ${minFreeBytes > 0 ? `keeps at least ${formatBytes(minFreeBytes)} free` : "no free-space floor"}`,
@@ -1595,7 +1673,7 @@ async function main(): Promise<void> {
   }
 
   // ── Per-project startup: ensure the "manual"/"focus" labels exist ─────────
-  for (const ctx of contexts) {
+  const ensureProjectLabels = async (ctx: ProjectContext): Promise<void> => {
     const { bullet, note, section } = createLogger(emitter, ctx.repoKey);
     section(`${ctx.repoKey}: Startup`);
     note("ensuring the \"manual\" label exists on the repository…");
@@ -1633,7 +1711,8 @@ async function main(): Promise<void> {
         bullet(`could not ensure "${FOCUS_LABEL}" label exists: ${(error as Error).message}`);
       }
     }
-  }
+  };
+  for (const ctx of contexts) await ensureProjectLabels(ctx);
 
   // ── Launch the shared engine pool ─────────────────────────────────────────
   const planningMutex = new PlanningMutex();
@@ -1678,6 +1757,46 @@ async function main(): Promise<void> {
       emitter,
     });
   });
+
+  // ── A fleet member takes its orders from here on ──────────────────────────
+  if (fleet) {
+    /** Stop taking work and let what is running finish; the process then exits with `code`. */
+    const windDown = (code: number): void => {
+      fleetExitCode = code;
+      if (shutdownSignal.requested) return;
+      shutdownSignal.requested = true;
+      emitter.emit("shutdown-requested", {});
+      poolWake.wake();
+    };
+    fleet.start({
+      async reposChanged({ added, removed }: { added: MemberConfig["repos"]; removed: string[] }) {
+        for (const repo of removed) {
+          const index = contexts.findIndex((ctx) => ctx.repoKey.toLowerCase() === repo.toLowerCase());
+          // What an engine is running on it holds its own reference, and finishes.
+          if (index >= 0) contexts.splice(index, 1);
+          emitter.emit("project-removed", { repo });
+          write(`${repo} is no longer assigned to this member: what is running on it is left to finish.`);
+        }
+        for (const repo of added) {
+          const ctx = makeContext(projectOf(repo));
+          await ensureProjectLabels(ctx);
+          contexts.push(ctx);
+          write(`${ctx.repoKey} is assigned to this member.`);
+        }
+        dashboard.setProjects(contexts.map((ctx) => ctx.repoKey));
+        // An engine waiting out an empty cycle starts on the new work now.
+        poolWake.wake();
+      },
+      restart(reason: string) {
+        setExitReason(`fleet restart: ${reason}`);
+        windDown(RESTART_EXIT_CODE);
+      },
+      stop(reason: string) {
+        setExitReason(`fleet stop: ${reason}`);
+        windDown(0);
+      },
+    });
+  }
 
   const engines = Array.from({ length: globalMaxConcurrency }, (_, i) =>
     runEngine(
@@ -1726,10 +1845,16 @@ async function main(): Promise<void> {
     process.stdin.setRawMode(false);
   }
   usageMonitor.stop();
+  if (fleet) {
+    // Move the checkout if that is what the stop was for, and send what is waiting.
+    await fleet.finish().catch((error: unknown) => {
+      failure(`fleet: ${error instanceof Error ? error.message : String(error)}`);
+    });
+  }
   if (dashboardReady) {
     dashboard.close();
   }
-  process.exit(0);
+  process.exit(fleet ? fleetExitCode : 0);
 }
 
 main().catch((error: unknown) => {

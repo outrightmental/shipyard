@@ -41,6 +41,10 @@ export type DashboardEventType =
   // Where one dashboard approval of one PR stands (#276), from the moment it is
   // received until it ends: see `PullRequestApproval` in src/dashboard-approval.ts.
   | "pull-request-approval"
+  // A repository is no longer this pool's (#4): Shipyard assigned it to
+  // another fleet member, or stopped subscribing to it. `{ repo }`. Its work
+  // leaves every dashboard of this pool.
+  | "project-removed"
   | "css-reload";
 
 export interface DashboardEvent {

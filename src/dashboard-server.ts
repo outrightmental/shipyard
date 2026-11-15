@@ -479,6 +479,13 @@ export class DashboardServer {
     this.multiProject = projects.length > 1;
   }
 
+  /** How many pages have this dashboard open right now. */
+  clientCount(): number {
+    let open = 0;
+    for (const client of this.wss.clients) if (client.readyState === 1) open += 1;
+    return open;
+  }
+
   async initialize(): Promise<void> {
     // no-op: static assets served from src/dashboard/ and dist/dashboard/
   }

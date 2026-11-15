@@ -14,3 +14,8 @@ __pycache__/
 
 # Claude
 .claude
+# Terraform: providers, and what the builds stage for an apply
+.terraform/
+infra/.build/
+*.tfplan
+*.tfvars

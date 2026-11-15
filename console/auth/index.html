@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex">
+  <title>Sign in — Shipyard</title>
+  <!-- The sign-in pages at the sign-in host. The console's icon is uploaded beside these files
+       (infra/auth.tf); this page's own files are relative, so they resolve on /logout too. -->
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="tokens.css">
+  <link rel="stylesheet" href="auth.css">
+  <script type="module" src="page.js"></script>
+</head>
+<body>
+  <main class="stage">
+    <div class="hero">
+      <img class="mark" src="shipyard.svg" alt="" width="128" height="128">
+    </div>
+    <h1 class="wordmark">Shipyard</h1>
+    <section class="card" id="card" aria-live="polite">
+      <noscript><p class="banner">The sign-in pages need JavaScript.</p></noscript>
+    </section>
+  </main>
+</body>
+</html>

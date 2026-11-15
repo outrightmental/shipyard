@@ -1,0 +1,43 @@
+/* The sign-in pages' design tokens: the dashboard's own trim (src/dashboard/styles/tokens.css) —
+   hue-free gray, r = g = b — so the pages a person signs in on are the console's own. The one
+   saturated colour is the red that says a sign-in failed, which is the dashboard's error signal. */
+:root {
+  color-scheme: dark;
+  --font-ui: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --bg-0: #0e0e0e;
+  --bg-1: #121212;
+  --bg-2: #181818;
+  --bg-3: #1f1f1f;
+  --bg-4: #282828;
+  --bg-5: #323232;
+  --line-0: #1a1a1a;
+  --line-1: #262626;
+  --line-2: #363636;
+  --line-3: #4a4a4a;
+  --fg-0: #e0e0e0;
+  --fg-1: #b4b4b4;
+  --fg-2: #8c8c8c;
+  --fg-3: #6a6a6a;
+  --fg-4: #4a4a4a;
+  --accent: #e0e0e0;
+  --accent-strong: #ffffff;
+  --accent-soft: rgba(224, 224, 224, .14);
+  --accent-line: rgba(224, 224, 224, .40);
+  --danger: #ff0055;
+  --danger-soft: rgba(255, 0, 85, .13);
+  --danger-line: rgba(255, 0, 85, .45);
+  --r-1: 4px;
+  --r-2: 6px;
+  --r-3: 10px;
+  --r-4: 14px;
+  --shadow-1: inset 0 1px 0 rgba(255, 255, 255, .025), 0 1px 2px rgba(0, 0, 0, .45);
+  --shadow-2: 0 12px 40px rgba(0, 0, 0, .55), 0 0 0 1px rgba(255, 255, 255, .03);
+  --fs-0: 11px;
+  --fs-1: 12px;
+  --fs-2: 13px;
+  --fs-3: 14px;
+  --fs-4: 16px;
+  --fs-5: 20px;
+  --fs-6: 26px;
+}

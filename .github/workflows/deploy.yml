@@ -1,0 +1,109 @@
+name: Deploy
+
+# Main is what runs. There is no staging: every push to main tests the tree,
+# builds the function and the console, and applies infra/ as the
+# shipyard-deploy role (infra/bootstrap/) through GitHub's OIDC provider. No
+# AWS key is stored. The first apply of the platform is by hand (infra/main.tf),
+# as are the bootstrap root that creates the role and the github root that sets
+# the two secrets read here; this workflow carries every deploy after.
+#
+# This repository and its logs are public. The role's ARN and the operator's
+# address are secrets, so GitHub masks them wherever they would be printed, and
+# the account's id is masked by the credentials step.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  deploy:
+    name: Build and apply
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      TF_IN_AUTOMATION: "1"
+      TF_INPUT: "0"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: This run is main's tip
+        run: |
+          tip=$(git ls-remote --quiet origin refs/heads/main | cut -f1)
+          if [ "$tip" != "$GITHUB_SHA" ]; then
+            echo "::error::main is at $tip; this run is for $GITHUB_SHA. A run for an older commit never applies."
+            exit 1
+          fi
+
+      - name: The trust is in place
+        env:
+          DEPLOY_ROLE: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          OPERATOR: ${{ secrets.SHIPYARD_OPERATOR_EMAIL }}
+        run: |
+          if [ -z "$DEPLOY_ROLE" ] || [ -z "$OPERATOR" ]; then
+            echo "::error::AWS_DEPLOY_ROLE_ARN or SHIPYARD_OPERATOR_EMAIL is not set: apply infra/bootstrap and then infra/github by hand (the latter sets both secrets)."
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.16.x"
+          terraform_wrapper: false
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check and build
+        run: npm run build
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build the function and the console
+        run: |
+          npm run build:lambda
+          npm run build:console
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          mask-aws-account-id: true
+
+      - name: Terraform init
+        run: terraform -chdir=infra init
+
+      - name: Terraform apply
+        env:
+          TF_VAR_operator_email: ${{ secrets.SHIPYARD_OPERATOR_EMAIL }}
+          TF_VAR_release_sha: ${{ github.sha }}
+        run: terraform -chdir=infra apply -auto-approve
+
+      - name: The platform answers on this commit
+        run: |
+          for attempt in 1 2 3 4 5 6; do
+            body=$(curl -fsS https://shipyard.outright.io/healthz || true)
+            echo "$body"
+            if echo "$body" | grep -q "\"release\":\"$GITHUB_SHA\""; then exit 0; fi
+            sleep 10
+          done
+          echo "::error::https://shipyard.outright.io/healthz does not report $GITHUB_SHA"
+          exit 1

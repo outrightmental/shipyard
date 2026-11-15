@@ -30,7 +30,7 @@ It is [Yoke](design/YOKE.md) run as a service. Yoke does all of this on one mach
 ```
 
 - **Dashboard** is Yoke's, as it is drawn — [the field and the inbox](design/DASHBOARD.md) — for the whole fleet. Work that is burning is at the top, **grouped by the fleet member burning it**, with that member's own Claude usage in its heading. Everything else is below, grouped by repository.
-- **Fleet** is the machines: which are online, the commit each runs, its Claude usage, the size of its engine pool, what it is assigned.
+- **Fleet** is the machines: which are online, the commit each runs, its Claude usage, how many cylinders it has, what it is assigned.
 - **Repositories** is where Shipyard is connected to GitHub and where work is given out: subscribe to a repository, and assign it to a fleet member.
 - **The inbox**, down the right-hand edge, is everything waiting on a person: a PR to approve, and whatever is stopping work across the fleet.
 
@@ -128,7 +128,7 @@ A fleet member is Yoke's engine pool with its orders coming from Shipyard. How i
 | Enroll it again | `npm run enroll -- --code <a new code>`: it stays the member it was, with its name and its repositories |
 | Retire it | **Fleet → Retire**. Its token stops working at once and the machine stops. |
 
-The pool's size is set on the Fleet page. The member restarts between runs to take a new one.
+How many cylinders a member has — how many pieces of work it runs at once — is the member's own number. It is six to begin with and is set on the Fleet page, member by member; the machine does not set it. The member restarts between runs to take a new one.
 
 ## How it is run
 

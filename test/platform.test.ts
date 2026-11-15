@@ -1,10 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHmac, createSign, createVerify, generateKeyPairSync } from "node:crypto";
-import { APP_SECRET_NAME, appJwt } from "../src/platform/github-app.js";
+import { appJwt, LEGACY_SECRET_NAME, secretNameFor } from "../src/platform/github-app.js";
+import { cachedSecrets, type Secrets } from "../src/platform/platform.js";
 import { createJwtVerifier } from "../src/platform/jwt.js";
 import { cachedEvents } from "../src/platform/relay.js";
-import { unassignedRepos } from "../src/platform/tick.js";
+import { readRepositoryLifecycle, unassignedRepos } from "../src/platform/tick.js";
 import { fleetNotices } from "../src/shared/notices.js";
 import { CENTRAL_MEMBER_ID, type ConsoleState, type FleetMember, type GitHubStatus, type MemberConfig } from "../src/shared/protocol.js";
 import { isProcessKey, replayOp } from "../src/shared/replay-cache.js";
@@ -626,7 +627,9 @@ test("the app's key and secrets are kept out of the table", async () => {
   assert.ok(!rows.includes("BEGIN RSA PRIVATE KEY"));
   assert.ok(!rows.includes("hook-secret"));
   assert.ok(!rows.includes("client-secret"));
-  const kept = JSON.parse(t.secrets.get(APP_SECRET_NAME)!) as { pem: string; webhookSecret: string };
+  // Under a name of the app's own, so what is kept under a name never changes.
+  assert.deepEqual([...t.secrets.keys()], [secretNameFor(4242)]);
+  const kept = JSON.parse(t.secrets.get(secretNameFor(4242))!) as { pem: string; webhookSecret: string };
   assert.equal(kept.pem, APP_PEM);
   assert.equal(kept.webhookSecret, "hook-secret");
   assert.ok(!JSON.stringify(await state(t)).includes("hook-secret"));
@@ -763,7 +766,196 @@ test("the app's JWT is signed with its key, names it, and lasts under ten minute
   assert.ok(verifier.verify(APP_PUBLIC, Buffer.from(signature, "base64url")));
 });
 
+// ── Connecting again ─────────────────────────────────────────────────────────
+
+/** Two apps on GitHub, each with a key of its own: a request is taken only when it is signed with the key of the app it says it is. */
+function twoAppGithub(t: ReturnType<typeof testPlatform>) {
+  const keys = new Map([1001, 1002].map((id) => [id, generateKeyPairSync("rsa", { modulusLength: 2048 })]));
+  const pemOf = (id: number) => keys.get(id)!.privateKey.export({ type: "pkcs1", format: "pem" }).toString();
+  const refused = () => new Response(JSON.stringify({ message: "A JSON web token could not be decoded" }), { status: 401 });
+  /** The app a request's JWT is truly from, or null when its signature is not that app's. */
+  const signedBy = (authorization: string | undefined): number | null => {
+    const [header, payload, signature] = (authorization ?? "").replace("Bearer ", "").split(".");
+    if (!header || !payload || !signature) return null;
+    const id = Number((JSON.parse(Buffer.from(payload, "base64url").toString()) as { iss: string }).iss);
+    const key = keys.get(id);
+    if (!key) return null;
+    const verifier = createVerify("RSA-SHA256");
+    verifier.update(`${header}.${payload}`);
+    return verifier.verify(key.publicKey, Buffer.from(signature, "base64url")) ? id : null;
+  };
+  t.onFetch((url) => {
+    const conversion = /app-manifests\/code-(\d+)\/conversions$/.exec(url);
+    if (conversion) {
+      const id = Number(conversion[1]);
+      return new Response(JSON.stringify({
+        id, slug: `app-${id}`, name: `app-${id}`, html_url: `https://github.com/apps/app-${id}`,
+        client_id: `c${id}`, client_secret: `s${id}`, webhook_secret: `hook-${id}`, pem: pemOf(id), owner: { login: "acme" },
+      }), { status: 201 });
+    }
+    const authorization = t.fetched.at(-1)?.headers["authorization"];
+    if (url.includes("/app/installations?")) {
+      const id = signedBy(authorization);
+      return id === null ? refused() : [{ id: id * 10, account: { login: "acme" }, repository_selection: "all", html_url: "" }];
+    }
+    const mint = /app\/installations\/(\d+)\/access_tokens$/.exec(url);
+    if (mint) {
+      const id = signedBy(authorization);
+      if (id === null || id * 10 !== Number(mint[1])) return refused();
+      return new Response(JSON.stringify({ token: `ghs_for_${id}`, expires_at: "2026-11-15T13:00:00Z" }), { status: 201 });
+    }
+    if (url.includes("/installation/repositories")) return { repositories: [] };
+    return undefined;
+  });
+  return { pemOf };
+}
+
+/** `t`, as another instance of the function sees it: the same table and the same secret store, a memory of its own. */
+function instanceOf(t: ReturnType<typeof testPlatform>): ReturnType<typeof testPlatform> {
+  return { ...t, p: { ...t.p, secrets: cachedSecrets(t.p.secrets) } };
+}
+
+async function connectApp(t: ReturnType<typeof testPlatform>, id: number): Promise<void> {
+  const begun = await call(t, "POST", "/api/github/manifest", { org: "acme" });
+  const done = await call(t, "POST", "/api/github/app", { code: `code-${id}`, state: begun.body["state"] });
+  assert.equal(done.status, 200, JSON.stringify(done.body));
+}
+
+test("an app connected after another was disconnected is signed for with its own key, on every instance, at once", async () => {
+  const t = testPlatform();
+  twoAppGithub(t);
+  // Two instances of the function, each remembering the secrets it has read.
+  const [one, two] = [instanceOf(t), instanceOf(t)];
+
+  await connectApp(one, 1001);
+  // Both instances have now read, and remember, the first app's key.
+  assert.equal((await call(one, "POST", "/api/github/refresh")).status, 200);
+  assert.equal((await call(two, "POST", "/api/github/refresh")).status, 200);
+
+  // The operator disconnects it and connects another, and each call lands on whichever instance it lands on.
+  assert.equal((await call(one, "DELETE", "/api/github")).status, 200);
+  await connectApp(one, 1002);
+
+  // The instance that connected nothing still remembers the first app's key. It must not sign with it.
+  const onTheOther = await call(two, "POST", "/api/github/refresh");
+  assert.equal(onTheOther.status, 200, JSON.stringify(onTheOther.body));
+  assert.equal((onTheOther.body["github"] as GitHubStatus).installation?.id, 10020);
+  assert.equal((await call(two, "GET", "/api/github/repositories")).status, 200);
+  assert.equal((await call(one, "GET", "/api/github/repositories")).status, 200);
+
+  // And a webhook is checked against the second app's secret there too, not the first's.
+  const raw = JSON.stringify({ action: "created" });
+  const hook = (secret: string) => call(two, "POST", "/hooks/github", undefined, {
+    raw, headers: { "x-github-event": "ping", "x-hub-signature-256": `sha256=${createHmac("sha256", secret).update(raw).digest("hex")}` },
+  });
+  assert.equal((await hook("hook-1002")).status, 202);
+  assert.equal((await hook("hook-1001")).status, 401);
+
+  // Only the second app's credentials are kept; the first's went when it was disconnected.
+  assert.deepEqual([...t.secrets.keys()], [secretNameFor(1002)]);
+});
+
+test("an app whose credentials were kept under the one old name is still found, and is forgotten whole", async () => {
+  const t = testPlatform();
+  const { pemOf } = twoAppGithub(t);
+  await connectApp(t, 1001);
+  // As the build before this left it: under the one name, with none of the app's own.
+  t.secrets.set(LEGACY_SECRET_NAME, t.secrets.get(secretNameFor(1001))!);
+  t.secrets.delete(secretNameFor(1001));
+  assert.equal(JSON.parse(t.secrets.get(LEGACY_SECRET_NAME)!).pem, pemOf(1001));
+
+  assert.equal((await call(t, "POST", "/api/github/refresh")).status, 200);
+  assert.equal((await call(t, "DELETE", "/api/github")).status, 200);
+  assert.equal(t.secrets.size, 0);
+});
+
+test("a secret that was found is remembered for a while; that one is missing never is", async () => {
+  let now = 0;
+  const store = new Map<string, string>();
+  let reads = 0;
+  const inner: Secrets = {
+    async get(name) { reads += 1; return store.get(name) ?? null; },
+    async put(name, value) { store.set(name, value); },
+    async delete(name) { store.delete(name); },
+  };
+  const secrets = cachedSecrets(inner, { keepMs: 1_000, now: () => now });
+
+  // Missing is asked again every time: another instance may write it at any moment.
+  assert.equal(await secrets.get("key"), null);
+  store.set("key", "written elsewhere");
+  assert.equal(await secrets.get("key"), "written elsewhere");
+  assert.equal(reads, 2);
+
+  // Found is kept, and not asked for again until it has aged out.
+  assert.equal(await secrets.get("key"), "written elsewhere");
+  assert.equal(reads, 2);
+  now = 1_001;
+  assert.equal(await secrets.get("key"), "written elsewhere");
+  assert.equal(reads, 3);
+
+  // What this instance writes and deletes it knows without asking.
+  await secrets.put("key", "written here");
+  assert.equal(await secrets.get("key"), "written here");
+  await secrets.delete("key");
+  assert.equal(await secrets.get("key"), null);
+});
+
 // ── The unassigned repositories ──────────────────────────────────────────────
+
+test("an unassigned repository is read lightly: two listings, never a request per issue", async () => {
+  const t = testPlatform();
+  const issue = (number: number, extra: Record<string, unknown> = {}) => ({
+    number, title: `Issue ${number}`, body: "", created_at: "2026-11-01T00:00:00Z", updated_at: "2026-11-02T00:00:00Z", labels: [], milestone: null, ...extra,
+  });
+  // A hundred and thirty open issues, over two pages, and what the issue listing lists that is really a pull request.
+  const issues = [
+    ...Array.from({ length: 130 }, (_, i) => issue(i + 1)),
+    issue(900, { pull_request: {} }),
+    issue(131, { labels: [{ name: "manual" }] }),
+    issue(132, { body: "blocked by #1" }),
+  ];
+  const pulls = [{
+    number: 900, title: "Do the first thing", body: "Closes #1", created_at: "2026-11-03T00:00:00Z", updated_at: "2026-11-03T00:00:00Z",
+    draft: true, labels: [], head: { sha: "abc", ref: "yoke/issue-1" }, base: { ref: "main" },
+  }];
+  t.onFetch((url) => {
+    const page = Number(new URL(url).searchParams.get("page"));
+    if (url.includes("/repos/acme/big/issues?state=open")) return issues.slice((page - 1) * 100, page * 100);
+    if (url.includes("/repos/acme/big/pulls?state=open")) return page === 1 ? pulls : [];
+    return undefined;
+  });
+
+  const event = await readRepositoryLifecycle(t.p, "acme/big", "ghs_token");
+  assert.equal(t.fetched.length, 3, "two pages of issues and one of pull requests, however many issues there are");
+  assert.ok(t.fetched.every((request) => request.headers["authorization"] === "Bearer ghs_token"));
+
+  assert.equal(event?.type, "lifecycle-update");
+  assert.equal(event?.data["repo"], "acme/big");
+  assert.equal(event?.data["unassigned"], true, "said on the event, so a dashboard draws it as waiting on a fleet member");
+  const pairs = event!.data["pairs"] as Array<{ issue: { number: number } | null; pr: { number: number; draft: boolean } | null; prPhase: string; blockedByIssueNumbers?: number[] }>;
+  const byIssue = new Map(pairs.map((pair) => [pair.issue?.number, pair]));
+  assert.equal(pairs.length, 131, "every open issue but the one labelled manual, and the pull request with the issue it closes");
+  assert.deepEqual([byIssue.get(1)?.pr?.number, byIssue.get(1)?.pr?.draft, byIssue.get(1)?.prPhase], [900, true, "active"]);
+  assert.equal(byIssue.get(2)?.pr, null);
+  assert.equal(byIssue.has(131), false);
+  assert.deepEqual(byIssue.get(132)?.blockedByIssueNumbers, [1], "a dependency written in an issue is read from it, with nothing asked of GitHub");
+});
+
+test("subscribing to a repository puts its work on the dashboard at once, as no one's", async () => {
+  const t = testPlatform();
+  fakeGithub(t);
+  await connectGithub(t);
+  await call(t, "POST", "/api/github/refresh");
+  const github = t.fetched.length;
+  await connect(t, "console-1", { console: true });
+  t.pushed.length = 0;
+
+  const subscribed = await call(t, "PUT", "/api/repos/acme/widgets", {});
+  assert.equal(subscribed.status, 200);
+  // A token, then the two listings (the fake GitHub has neither: the repository is read as empty or not at all).
+  assert.ok(t.fetched.length - github <= 3, `subscribing asked GitHub ${t.fetched.length - github} things`);
+  assert.ok(pushedTo(t, "console-1").some((message) => message["t"] === "changed"));
+});
 
 test("a repository is the platform's own to read while no active member has it", async () => {
   const t = testPlatform();

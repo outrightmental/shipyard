@@ -237,12 +237,16 @@ export class ShipyardRepos extends LitElement {
 
   private _row(row: RepoRow, members: readonly FleetMember[]) {
     const { subscribed, available } = row;
-    const busy = this._busy === `repo:${row.repo}`;
+    // One thing at a time: while a change is under way every row's controls
+    // are off, so a press that would be dropped cannot be made, and the row
+    // being changed says what is happening to it.
+    const active = this._busy === `repo:${row.repo}`;
+    const busy = this._busy !== null;
     const assigned = subscribed?.memberId ?? '';
     // Assigned to a member that has since been retired is assigned to no one.
     const orphaned = assigned !== '' && !members.some((member) => member.id === assigned);
     return html`
-      <tr class="${subscribed ? 'is-subscribed' : ''}" aria-busy="${busy ? 'true' : 'false'}">
+      <tr class="${subscribed ? 'is-subscribed' : ''}" aria-busy="${active ? 'true' : 'false'}">
         <td>
           <a class="console-link" href="${available?.htmlUrl ?? `https://github.com/${row.repo}`}" target="_blank" rel="noopener noreferrer">${row.repo}</a>
           ${available?.private ? html`<span class="console-tag">private</span>` : nothing}
@@ -261,8 +265,8 @@ export class ShipyardRepos extends LitElement {
         </td>
         <td class="console-cell-action">
           ${subscribed
-            ? html`<button class="console-button is-quiet" type="button" ?disabled=${busy} @click=${() => this._unsubscribe(row)}>Unsubscribe</button>`
-            : html`<button class="console-button" type="button" ?disabled=${busy} @click=${() => this._subscribe(row)}>Subscribe</button>`}
+            ? html`<button class="console-button is-quiet" type="button" ?disabled=${busy} @click=${() => this._unsubscribe(row)}>${active ? 'Working…' : 'Unsubscribe'}</button>`
+            : html`<button class="console-button" type="button" ?disabled=${busy} @click=${() => this._subscribe(row)}>${active ? 'Subscribing…' : 'Subscribe'}</button>`}
         </td>
       </tr>`;
   }

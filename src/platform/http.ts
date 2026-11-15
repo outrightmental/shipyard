@@ -21,7 +21,7 @@ import {
   beginManifest,
   completeManifest,
   disconnectGithub,
-  githubReady,
+  githubForMembers,
   githubStatus,
   installationToken,
   listAvailableRepos,
@@ -221,11 +221,11 @@ async function fleetRoute(p: Platform, request: HttpRequest, path: string): Prom
 
   if (path === "/hello" && method === "POST") {
     const member = await heard(p, authenticated, parseBody(request));
-    return ok({ config: await memberConfig(p, member, await githubReady(p)) });
+    return ok({ config: await memberConfig(p, member, await githubForMembers(p)) });
   }
 
   if (path === "/config" && method === "GET") {
-    return ok({ config: await memberConfig(p, authenticated, await githubReady(p)) });
+    return ok({ config: await memberConfig(p, authenticated, await githubForMembers(p)) });
   }
 
   if (path === "/beat" && method === "POST") {

@@ -125,6 +125,12 @@ export interface MemberConfig {
   repos: Array<{ repo: string } & RepoSettings>;
   /** Whether Shipyard can mint this member a GitHub token at all. */
   github: { ready: boolean };
+  /**
+   * Who the member's commits are by: the GitHub App itself, so that what
+   * Shipyard does on GitHub is in its name from the commit to the pull
+   * request. Null until the app exists.
+   */
+  git: { name: string; email: string } | null;
   wsUrl: string;
 }
 

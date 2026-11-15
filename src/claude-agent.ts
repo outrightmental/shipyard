@@ -2,7 +2,7 @@ import { execFile, spawn, spawnSync, type ChildProcess } from "node:child_proces
 import { mkdir, mkdtemp, readdir, readFile, rm, stat, unlink, utimes } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { GitHubApiGateway } from "./github-gateway.js";
+import { currentGitHubToken, GitHubApiGateway, type GitHubTokenSource } from "./github-gateway.js";
 
 
 
@@ -477,8 +477,13 @@ interface ClaudeAgentClientOptions {
   checkoutRootDir?: string;
   /** Path / command for the local `claude` CLI. */
   claudeCommand?: string;
-  /** GitHub token used for GitHub API and authenticated git operations. Required unless githubGateway is provided. */
-  githubToken?: string;
+  /**
+   * GitHub token used for GitHub API and authenticated git operations, or
+   * where to read the one that is good right now: a fleet member's token is
+   * minted for an hour and a run outlives it, so each git command is given
+   * the token of the moment. Required unless githubGateway is provided.
+   */
+  githubToken?: GitHubTokenSource;
   /** GitHub REST API base URL. */
   githubApiBaseUrl?: string;
   /** Shared GitHub API gateway for all REST/GraphQL calls. */
@@ -648,7 +653,7 @@ interface RunCommandOptions {
 }
 
 class GitAuth {
-  constructor(private readonly token: string) {}
+  constructor(private readonly token: GitHubTokenSource) {}
 
   env(baseEnv: NodeJS.ProcessEnv = process.env, authScopeUrls: readonly string[] = []): NodeJS.ProcessEnv {
     const env: NodeJS.ProcessEnv = { ...baseEnv };
@@ -657,7 +662,8 @@ class GitAuth {
     const index = Number.isFinite(count) && count >= 0 ? count : 0;
     const authScopes = this.resolveAuthScopes(authScopeUrls);
     // GitHub's git endpoint requires Basic auth; Bearer is only accepted by the REST API.
-    const basicCredential = Buffer.from(`x-access-token:${this.token}`).toString("base64");
+    // Read now, not when the client was made: the token may have been renewed since.
+    const basicCredential = Buffer.from(`x-access-token:${currentGitHubToken(this.token)}`).toString("base64");
     env.GIT_CONFIG_COUNT = String(index + authScopes.length);
     authScopes.forEach((scope, offset) => {
       env[`GIT_CONFIG_KEY_${index + offset}`] = `http.${scope}/.extraheader`;
@@ -2013,7 +2019,7 @@ export function withCanonicalCloneLock<T>(dir: string, fn: () => Promise<T>): Pr
 class DefaultClaudeAgentClient implements ClaudeAgentClient {
   private readonly checkoutRootDir: string;
   private readonly claudeCommand: string;
-  private readonly githubToken: string;
+  private readonly githubToken: GitHubTokenSource;
   private readonly githubApiBaseUrl: string;
   private readonly githubGateway: GitHubApiGateway;
   private readonly repositoryCloneUrl:

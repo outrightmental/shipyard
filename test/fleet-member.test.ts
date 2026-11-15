@@ -203,7 +203,7 @@ test("a member is told what to be: a pool, and no repositories until it is assig
   assert.equal(joined.restart, false);
   assert.deepEqual(member.config.member, { id: enrolled.memberId, name: "atlas" });
   assert.deepEqual(member.repos, []);
-  assert.deepEqual(member.envConfig(), { max_concurrency: 3, dashboard_title: "atlas", github_tokens: [], projects: [] });
+  assert.deepEqual(member.envConfig(), { max_concurrency: 6, dashboard_title: "atlas", github_tokens: [], projects: [] });
   assert.equal(member.tokens.current(), "", "with nothing to work on there is no token to ask for");
   assert.equal(h.minted.length, 0);
 
@@ -388,10 +388,10 @@ test("a pool resized in Shipyard restarts the member to take the new size, once 
   const enrolled = await enroll(h);
   const { told, logs } = await startMember(t, h);
   await until("its socket", async () => (await h.state()).members[0]?.connected === true);
-  await h.operator("PATCH", `/api/fleet/${enrolled.memberId}`, { maxConcurrency: 6 });
+  await h.operator("PATCH", `/api/fleet/${enrolled.memberId}`, { maxConcurrency: 4 });
   await until("it to be told", () => told.length === 1);
   assert.deepEqual(told, [{ what: "restart", reason: "its engine pool was resized" }]);
-  assert.ok(logs.some((line) => /engine pool is now 6 \(was 3\)/.test(line)));
+  assert.ok(logs.some((line) => /engine pool is now 4 \(was 6\)/.test(line)));
 });
 
 test("a member an operator retires is told to stop, and does not come back", async (t) => {

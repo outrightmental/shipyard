@@ -204,16 +204,17 @@ export class ShipyardFleet extends LitElement {
             </dd>
           </div>
           <div>
-            <dt>Engines</dt>
+            <dt>Cylinders</dt>
             <dd>
               <input
                 class="console-input console-number"
                 type="number" min="1" max="32" step="1"
-                aria-label="Engines in ${member.name}'s pool"
+                aria-label="Cylinders ${member.name} has"
+                title="How many pieces of work ${member.name} runs at once"
                 .value=${String(member.maxConcurrency)}
                 @change=${(event: Event) => this._resize(member, event)}
               >
-              <span class="console-faint">it restarts between runs to take a new size</span>
+              <span class="console-faint">at once · it restarts between runs to take a new number</span>
             </dd>
           </div>
           <div>

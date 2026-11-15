@@ -138,7 +138,7 @@ test("hello answers with the member's configuration, and its version moves when 
   const hello = await call(t, "POST", "/fleet/hello", { boot: "b1", commit: "abc1234" }, { token: atlas.token });
   const config = hello.body["config"] as MemberConfig;
   assert.deepEqual(config.member, { id: atlas.memberId, name: "atlas" });
-  assert.equal(config.maxConcurrency, 3);
+  assert.equal(config.maxConcurrency, 6, "six cylinders, until an operator says otherwise");
   assert.deepEqual(config.repos, []);
   assert.equal(config.github.ready, false);
   assert.equal(config.git, null, "no app yet, so no one for its commits to be by");
@@ -154,11 +154,36 @@ test("hello answers with the member's configuration, and its version moves when 
   const beat = await call(t, "POST", "/fleet/beat", { boot: "b1" }, { token: atlas.token });
   assert.deepEqual(beat.body, { ok: true, release: t.p.settings.release, configVersion: assigned.configVersion });
 
-  await call(t, "PATCH", `/api/fleet/${atlas.memberId}`, { maxConcurrency: 6, name: "atlas-2" });
+  await call(t, "PATCH", `/api/fleet/${atlas.memberId}`, { maxConcurrency: 9, name: "atlas-2" });
   const resized = await configOf(t, atlas.token);
-  assert.equal(resized.maxConcurrency, 6);
+  assert.equal(resized.maxConcurrency, 9);
   assert.equal(resized.member.name, "atlas-2");
   assert.notEqual(resized.configVersion, assigned.configVersion);
+});
+
+test("how many cylinders a member has is its own: six to begin with, and set for it alone from the console", async () => {
+  const t = testPlatform();
+  const atlas = await enrollMachine(t, "atlas");
+  const borealis = await enrollMachine(t, "borealis");
+  const sizes = async () => Object.fromEntries((await state(t)).members.map((member) => [member.name, member.maxConcurrency]));
+  assert.deepEqual(await sizes(), { atlas: 6, borealis: 6 });
+
+  const before = await configOf(t, borealis.token);
+  const answer = await call(t, "PATCH", `/api/fleet/${atlas.memberId}`, { maxConcurrency: 2 });
+  assert.deepEqual(answer.body["member"], { id: atlas.memberId, name: "atlas", maxConcurrency: 2 });
+
+  // The console shows each member's own number, and each member is told its own.
+  assert.deepEqual(await sizes(), { atlas: 2, borealis: 6 });
+  assert.equal((await configOf(t, atlas.token)).maxConcurrency, 2);
+  const after = await configOf(t, borealis.token);
+  assert.equal(after.maxConcurrency, 6);
+  assert.equal(after.configVersion, before.configVersion, "another member's size is no change to this one");
+
+  // Enrolling the machine again keeps the number it was given.
+  const code = (await call(t, "POST", "/api/fleet/enroll-codes")).body["code"] as string;
+  const again = await call(t, "POST", "/enroll", { code, name: "atlas", previous: { memberId: atlas.memberId, token: atlas.token } });
+  assert.equal(again.body["memberId"], atlas.memberId);
+  assert.deepEqual(await sizes(), { atlas: 2, borealis: 6 });
 });
 
 test("a pool size that is not one is refused", async () => {

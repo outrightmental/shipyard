@@ -30,8 +30,12 @@ const ENROLL = "ENROLL";
 const CONN = "CONN";
 const REPO = "REPO";
 
-/** Yoke's own default pool size, for a member nobody has sized yet. */
-export const DEFAULT_MAX_CONCURRENCY = 3;
+/**
+ * How many cylinders a fleet member has until an operator says otherwise. It
+ * is the member's own number, kept on its row and set from the console's
+ * Fleet page: a machine does not say how big its pool is, Shipyard does.
+ */
+export const DEFAULT_MAX_CONCURRENCY = 6;
 /** Past this a pool is a mistake, not a setting. */
 export const MAX_MAX_CONCURRENCY = 32;
 /** A connection row outlives its socket by at most this: API Gateway closes a socket after two hours. */
@@ -411,7 +415,7 @@ export async function updateMember(
   if (change.maxConcurrency !== undefined) {
     const n = change.maxConcurrency;
     if (typeof n !== "number" || !Number.isInteger(n) || n < 1 || n > MAX_MAX_CONCURRENCY) {
-      return refuse(400, "POOL_SIZE", `an engine pool is between 1 and ${MAX_MAX_CONCURRENCY} engines`);
+      return refuse(400, "POOL_SIZE", `a fleet member has between 1 and ${MAX_MAX_CONCURRENCY} cylinders`);
     }
     patch["maxConcurrency"] = n;
   }

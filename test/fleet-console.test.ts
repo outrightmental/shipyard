@@ -399,9 +399,10 @@ test("a fleet member's dashboard server says it is read-only, and refuses a pres
   socket.close();
 
   assert.deepEqual(heard, [], "neither reaches the engine pool");
-  assert.deepEqual(answers.map((event) => [event.type, event.data["state"], event.data["reason"]]), [
-    ["pull-request-approval", "refused", READ_ONLY_REASON],
-  ]);
+  // Only what answers the press: the server also tells its pages other things
+  // as they happen (a stylesheet rebuilt beside it, for one), whenever they do.
+  const refusals = answers.filter((event) => event.type === "pull-request-approval");
+  assert.deepEqual(refusals.map((event) => [event.data["state"], event.data["reason"]]), [["refused", READ_ONLY_REASON]]);
 
   // The projects it is a dashboard of can change while it runs.
   server.setProjects(["o/a", "o/b"]);
@@ -551,7 +552,10 @@ test("when the fleet changes the store reads it again, once, and what happens me
   socket.push({ t: "changed" });
   socket.push({ t: "changed" });
   socket.push({ t: "changed" });
-  await new Promise((resolve) => setTimeout(resolve, 320));
+  // However long the machine running this takes to get to it: wait for the read, then for any more to have shown.
+  const deadline = Date.now() + 5_000;
+  while (reads.length < 2 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 20));
+  await new Promise((resolve) => setTimeout(resolve, 400));
   assert.deepEqual(reads, ["GET /state", "GET /state"], "three in a row are one read");
   assert.deepEqual(store.view.members.map((m) => m.name), ["atlas", "borealis"]);
   assert.deepEqual(store.getState().notices.map((notice) => notice.id), ["member-unassigned:m_b"]);

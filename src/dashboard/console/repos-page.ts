@@ -1,10 +1,120 @@
 import { LitElement, html, nothing } from 'lit';
-import type { AvailableRepo, FleetMember, GitHubStatus, SubscribedRepo } from '../../shared/protocol.js';
+import type { AvailableRepo, GitHubStatus, SubscribedRepo } from '../../shared/protocol.js';
+import { formatClockTime } from '../shared/format.js';
 import { errorLine, type Api } from './api.js';
 import type { ConsoleView, FleetStore } from './fleet-store.js';
+import {
+  browserStorage,
+  forgetKeptRepositories,
+  keepRepositories,
+  readKeptRepositories,
+  type KeptRepositories,
+  type MemberName,
+} from './kept-repositories.js';
 
 /** The organization the app is made for, when nobody has said: the studio's. */
 export const DEFAULT_ORG = 'outrightmental';
+
+/** How many rows stand in for the list while it is read for the first time. */
+const PLACEHOLDER_ROWS = 6;
+
+/** The list of what the app can see that is in hand, and the installation it is the list of. */
+export interface ListInHand {
+  installation: number;
+  available: AvailableRepo[];
+  /** When it was read, in epoch millis. */
+  readAt: number;
+}
+
+/**
+ * What the app's installation can see, kept up with the installation there is.
+ *
+ * Reading it takes GitHub seconds, so it is never waited for with nothing to
+ * show: what this browser kept from its last visit is in hand at once, and a
+ * reading is begun on arriving that replaces it. While that is under way
+ * `reading` says so. A reading that fails leaves what is in hand as it was
+ * and says why. A list that turns out to be another installation's is dropped
+ * the moment that is known, and an answer that comes back after it has been
+ * asked for again is not taken.
+ */
+export class AvailableList {
+  list: ListInHand | null = null;
+  /** A reading is under way. */
+  reading = false;
+  /** Why the last reading failed, when it did. */
+  error: string | null = null;
+  /** The list in hand was read on this visit, not kept from an earlier one. */
+  fresh = false;
+  /** The installation the last reading was begun for. */
+  private _for: number | null = null;
+  private _turn = 0;
+
+  constructor(
+    private readonly read: () => Promise<AvailableRepo[]>,
+    private readonly changed: () => void,
+    kept: KeptRepositories | null = null,
+    private readonly now: () => number = Date.now,
+  ) {
+    const installation = kept?.github.installation?.id ?? null;
+    if (kept?.available && installation !== null) {
+      this.list = { installation, available: kept.available, readAt: kept.readAt ?? 0 };
+    }
+  }
+
+  /** Follow the installation there is: its list is read, once, and another's is dropped. */
+  follow(installation: number | null): void {
+    if (this.list && this.list.installation !== installation) {
+      this.list = null;
+      this.fresh = false;
+    }
+    if (installation === null) {
+      // A reading under way is for an installation there no longer is.
+      this._for = null;
+      this._turn += 1;
+      this.reading = false;
+      this.error = null;
+      return;
+    }
+    if (installation === this._for) return;
+    this._for = installation;
+    void this._read(installation);
+  }
+
+  /** What the installation can see may have changed: the next `follow` reads it again. */
+  stale(): void {
+    this._for = null;
+  }
+
+  private async _read(installation: number): Promise<void> {
+    const turn = ++this._turn;
+    this.reading = true;
+    this.error = null;
+    this.changed();
+    try {
+      const available = await this.read();
+      if (turn !== this._turn) return;
+      this.list = { installation, available, readAt: this.now() };
+      this.fresh = true;
+    } catch (error) {
+      if (turn !== this._turn) return;
+      this.error = errorLine(error);
+    }
+    this.reading = false;
+    this.changed();
+  }
+}
+
+/**
+ * What the page is drawn from: the fleet as the store has read it, or — until
+ * it has — as this browser kept it, which nothing can be changed from.
+ */
+interface Drawn {
+  github: GitHubStatus;
+  repos: readonly SubscribedRepo[];
+  members: readonly MemberName[];
+  /** The store has read the fleet: this is how things are, not how they were. */
+  settled: boolean;
+}
 
 /** One line of the Repositories table: a repository the app can see, one Shipyard is subscribed to, or both. */
 export interface RepoRow {
@@ -44,14 +154,19 @@ export function repoRows(available: readonly AvailableRepo[], subscribed: readon
  * installs on the organization. A repository the app can see can be
  * subscribed to, which puts its issues on the dashboard; it gets no work done
  * until it is assigned to a fleet member.
+ *
+ * The page is never drawn empty to be filled in later. It is drawn at once
+ * from what this browser kept the last time it was here (kept-repositories.ts)
+ * and read again behind that, and while it is being read the list says so:
+ * in words, with a bar that sweeps under its headings, and — the first time,
+ * when there is nothing kept to show — with rows standing in for the ones to
+ * come.
  */
 export class ShipyardRepos extends LitElement {
   static override properties = {
     store: { attribute: false },
     api: { attribute: false },
     _view: { state: true },
-    _available: { state: true },
-    _availableError: { state: true },
     _busy: { state: true },
     _error: { state: true },
     _org: { state: true },
@@ -62,27 +177,32 @@ export class ShipyardRepos extends LitElement {
   api: Api | null = null;
 
   private _view: ConsoleView | null = null;
-  private _available: AvailableRepo[] | null = null;
-  private _availableError: string | null = null;
+  /** The page as this browser last drew it: what is shown until the store has read the fleet. */
+  private _kept: KeptRepositories | null = null;
+  private _list: AvailableList | null = null;
   private _busy: string | null = null;
   private _error: string | null = null;
   private _org = DEFAULT_ORG;
   private _filter = '';
   private _unsub: (() => void) | null = null;
-  /** The installation the list of repositories was last read for. */
-  private _listedFor: number | null = null;
 
   protected override createRenderRoot() { return this; }
 
   override connectedCallback() {
     super.connectedCallback();
     if (!this.store) return;
+    this._kept = readKeptRepositories(browserStorage());
+    this._list = new AvailableList(
+      async () => (await this.api!.get<{ available: AvailableRepo[] }>('/github/repositories')).available,
+      () => { this.requestUpdate(); this._keep(); },
+      this._kept,
+    );
     this._view = this.store.view;
     this._unsub = this.store.subscribeView((view) => {
       this._view = view;
-      this._listIfInstalled();
+      this._follow();
     });
-    this._listIfInstalled();
+    this._follow();
   }
 
   override disconnectedCallback() {
@@ -91,27 +211,39 @@ export class ShipyardRepos extends LitElement {
     this._unsub = null;
   }
 
-  /** Read what the app can see, once per installation: it changes only when the installation does. */
-  private _listIfInstalled() {
-    const installation = this._view?.github.installation?.id ?? null;
-    if (installation === null) {
-      this._available = null;
-      this._listedFor = null;
-      return;
-    }
-    if (installation === this._listedFor) return;
-    this._listedFor = installation;
-    void this._list();
+  private _drawn(): Drawn | null {
+    const view = this._view;
+    if (view?.loaded) return { github: view.github, repos: view.repos, members: view.members, settled: true };
+    const kept = this._kept;
+    return kept ? { github: kept.github, repos: kept.repos, members: kept.members, settled: false } : null;
   }
 
-  private async _list() {
-    this._availableError = null;
-    try {
-      const { available } = await this.api!.get<{ available: AvailableRepo[] }>('/github/repositories');
-      this._available = available;
-    } catch (error) {
-      this._availableError = errorLine(error);
+  /**
+   * Read what the app can see, on arriving and whenever the installation
+   * changes. Until the store has read the fleet the installation is the one
+   * that was kept, so the reading is begun at once rather than after it.
+   */
+  private _follow() {
+    this._list?.follow(this._drawn()?.github.installation?.id ?? null);
+    this._keep();
+  }
+
+  /** Keep the page as it now is, for the next arrival. Only what the store has read is kept, never what was kept. */
+  private _keep() {
+    const view = this._view;
+    if (!view?.loaded) return;
+    if (!view.github.connected) {
+      forgetKeptRepositories(browserStorage());
+      return;
     }
+    const list = this._list?.list ?? null;
+    keepRepositories(browserStorage(), {
+      github: view.github,
+      repos: view.repos,
+      members: view.members.map(({ id, name }) => ({ id, name })),
+      available: list?.available ?? null,
+      readAt: list?.readAt ?? null,
+    });
   }
 
   private async _run(what: string, action: () => Promise<void>) {
@@ -125,6 +257,7 @@ export class ShipyardRepos extends LitElement {
       this._error = errorLine(error);
     } finally {
       this._busy = null;
+      this._follow();
     }
   }
 
@@ -155,7 +288,7 @@ export class ShipyardRepos extends LitElement {
   private _refreshInstallation() {
     return this._run('refresh', async () => {
       await this.api!.post('/github/refresh');
-      this._listedFor = null;
+      this._list?.stale();
     });
   }
 
@@ -164,7 +297,10 @@ export class ShipyardRepos extends LitElement {
     void this._run('disconnect', () => this.api!.delete('/github'));
   }
 
-  private _github(github: GitHubStatus) {
+  private _github(drawn: Drawn) {
+    const { github } = drawn;
+    // What was kept is shown, and nothing is changed from it.
+    const off = !drawn.settled;
     if (!github.connected || !github.app) {
       return html`
         <section class="console-card" aria-label="Connect GitHub">
@@ -182,7 +318,7 @@ export class ShipyardRepos extends LitElement {
                 @input=${(event: Event) => { this._org = (event.target as HTMLInputElement).value; }}
               >
             </label>
-            <button class="console-button is-primary" type="submit" ?disabled=${this._busy === 'connect'}>Create the GitHub App</button>
+            <button class="console-button is-primary" type="submit" ?disabled=${off || this._busy === 'connect'}>Create the GitHub App</button>
           </form>
         </section>`;
     }
@@ -205,10 +341,14 @@ export class ShipyardRepos extends LitElement {
             </p>`}
         <div class="console-row">
           ${installation ? nothing : html`<a class="console-button is-primary" href="${app.installUrl}">Install on GitHub</a>`}
-          <button class="console-button" type="button" ?disabled=${this._busy === 'refresh'} @click=${() => this._refreshInstallation()}>
+          <button
+            class="console-button" type="button"
+            ?disabled=${off || this._busy === 'refresh' || this._list?.reading === true}
+            @click=${() => this._refreshInstallation()}
+          >
             ${installation ? 'Read the repositories again' : 'I have installed it'}
           </button>
-          <button class="console-button is-danger" type="button" ?disabled=${this._busy === 'disconnect'} @click=${() => this._disconnect(github)}>Disconnect</button>
+          <button class="console-button is-danger" type="button" ?disabled=${off || this._busy === 'disconnect'} @click=${() => this._disconnect(github)}>Disconnect</button>
         </div>
       </section>`;
   }
@@ -235,13 +375,15 @@ export class ShipyardRepos extends LitElement {
     void this._run(`repo:${row.repo}`, () => this.api!.put(this._path(row.repo), { memberId }));
   }
 
-  private _row(row: RepoRow, members: readonly FleetMember[]) {
+  private _row(row: RepoRow, drawn: Drawn) {
     const { subscribed, available } = row;
+    const { members } = drawn;
     // One thing at a time: while a change is under way every row's controls
     // are off, so a press that would be dropped cannot be made, and the row
-    // being changed says what is happening to it.
+    // being changed says what is happening to it. They are off, too, while
+    // the row is drawn from what was kept: that is how it was, not how it is.
     const active = this._busy === `repo:${row.repo}`;
-    const busy = this._busy !== null;
+    const busy = this._busy !== null || !drawn.settled;
     const assigned = subscribed?.memberId ?? '';
     // Assigned to a member that has since been retired is assigned to no one.
     const orphaned = assigned !== '' && !members.some((member) => member.id === assigned);
@@ -251,7 +393,10 @@ export class ShipyardRepos extends LitElement {
           <a class="console-link" href="${available?.htmlUrl ?? `https://github.com/${row.repo}`}" target="_blank" rel="noopener noreferrer">${row.repo}</a>
           ${available?.private ? html`<span class="console-tag">private</span>` : nothing}
           ${available?.archived ? html`<span class="console-tag">archived</span>` : nothing}
-          ${subscribed && !available && this._available !== null ? html`<span class="console-tag is-down" title="The GitHub App's installation does not include this repository, so no fleet member can be given a token for it">not visible to the app</span>` : nothing}
+          ${subscribed && !available && drawn.settled && this._list?.fresh === true && !this._list.reading
+            // Said only of a list read on this visit: one kept from an earlier visit may simply be behind.
+            ? html`<span class="console-tag is-down" title="The GitHub App's installation does not include this repository, so no fleet member can be given a token for it">not visible to the app</span>`
+            : nothing}
           ${available?.description ? html`<div class="console-faint">${available.description}</div>` : nothing}
         </td>
         <td>
@@ -271,31 +416,66 @@ export class ShipyardRepos extends LitElement {
       </tr>`;
   }
 
-  private _repositories(view: ConsoleView) {
-    const rows = repoRows(this._available ?? [], view.repos);
+  /** What is being read, in words, or null when nothing is. */
+  private _activity(drawn: Drawn): string | null {
+    if (this._list?.reading) return 'Reading the repositories from GitHub…';
+    return drawn.settled ? null : 'Reading the fleet…';
+  }
+
+  /** A row standing in for one that is on its way, the first time the list is read. */
+  private _placeholder() {
+    return html`
+      <tr class="console-placeholder" aria-hidden="true">
+        <td><span class="console-bone"></span></td>
+        <td><span class="console-bone"></span></td>
+        <td class="console-cell-action"><span class="console-bone"></span></td>
+      </tr>`;
+  }
+
+  private _repositories(drawn: Drawn) {
+    const list = this._list?.list ?? null;
+    const error = this._list?.error ?? null;
+    const reading = this._list?.reading === true;
+    const activity = this._activity(drawn);
+    const rows = repoRows(list?.available ?? [], drawn.repos);
     const filter = this._filter.trim().toLowerCase();
     const shown = filter ? rows.filter((row) => row.repo.toLowerCase().includes(filter)) : rows;
-    const installed = view.github.installation !== null;
-    if (rows.length === 0) {
+    const installed = drawn.github.installation !== null;
+    const failed = error
+      ? html`<p class="console-banner" role="alert">
+          The repositories the app can see could not be read: ${error}${list ? `. This is the list as it was read ${formatClockTime(list.readAt)}.` : ''}
+        </p>`
+      : nothing;
+    if (rows.length === 0 && activity === null) {
+      if (error) return failed;
       return html`<p class="console-empty">${installed
-        ? this._available === null ? (this._availableError ?? 'Reading the repositories the app can see…') : 'The app can see no repository yet. Give it some on GitHub, then read them again.'
+        ? 'The app can see no repository yet. Give it some on GitHub, then read them again.'
         : 'Once the app is installed, the repositories it can see are listed here to subscribe to.'}</p>`;
     }
     return html`
-      ${this._availableError ? html`<p class="console-banner" role="alert">The repositories the app can see could not be read: ${this._availableError}</p>` : nothing}
+      ${failed}
       <div class="console-row console-table-tools">
         <input
           class="console-input" type="search" placeholder="Filter repositories" aria-label="Filter repositories"
           .value=${this._filter}
           @input=${(event: Event) => { this._filter = (event.target as HTMLInputElement).value; }}
         >
-        <span class="console-faint">${view.repos.length} subscribed${this._available ? ` of ${this._available.length} the app can see` : ''}</span>
+        <span class="console-faint">${drawn.repos.length} subscribed${list ? ` of ${list.available.length} the app can see` : ''}</span>
+        <span class="console-activity" role="status">
+          ${activity ? html`<span class="console-spinner" aria-hidden="true"></span>${activity}` : nothing}
+        </span>
       </div>
-      <table class="console-table">
+      <table class="console-table" aria-busy="${activity ? 'true' : 'false'}">
         <thead><tr><th scope="col">Repository</th><th scope="col">Worked by</th><th scope="col"><span class="console-sr">Subscription</span></th></tr></thead>
-        <tbody>${shown.map((row) => this._row(row, view.members))}</tbody>
+        <tbody>
+          <tr class="console-table-activity" aria-hidden="true">
+            <td colspan="3"><div class="console-progress${activity ? ' is-on' : ''}"></div></td>
+          </tr>
+          ${shown.map((row) => this._row(row, drawn))}
+          ${reading && list === null ? Array.from({ length: PLACEHOLDER_ROWS }, () => this._placeholder()) : nothing}
+        </tbody>
       </table>
-      ${view.members.length === 0 && view.repos.length > 0
+      ${drawn.settled && drawn.members.length === 0 && drawn.repos.length > 0
         ? html`<p class="console-note">There is no fleet member to assign these to yet. <a class="console-link" href="#/fleet">Enroll a machine</a>.</p>`
         : nothing}`;
   }
@@ -303,6 +483,13 @@ export class ShipyardRepos extends LitElement {
   override render() {
     const view = this._view;
     if (!view) return html``;
+    const drawn = this._drawn();
+    if (!drawn) {
+      // Nothing read yet and nothing kept: the first arrival in this browser.
+      return view.error
+        ? html`<div class="console-starting" role="status">Shipyard could not be read: ${view.error}</div>`
+        : html`<div class="console-starting" role="status"><span class="console-spinner" aria-hidden="true"></span>Reading the fleet…</div>`;
+    }
     return html`
       <div class="console-scroll">
         <header class="console-page-head">
@@ -314,9 +501,12 @@ export class ShipyardRepos extends LitElement {
             </p>
           </div>
         </header>
+        ${!drawn.settled && view.error
+          ? html`<p class="console-banner" role="alert">Shipyard could not be read: ${view.error}. This is the page as it was last read.</p>`
+          : nothing}
         ${this._error ? html`<p class="console-banner" role="alert">${this._error}</p>` : nothing}
-        ${this._github(view.github)}
-        ${view.github.connected ? this._repositories(view) : nothing}
+        ${this._github(drawn)}
+        ${drawn.github.connected ? this._repositories(drawn) : nothing}
       </div>`;
   }
 }

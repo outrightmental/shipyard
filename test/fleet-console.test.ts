@@ -10,7 +10,14 @@ import { normalizeConfig } from "../src/dashboard/console/config.js";
 import { noticeCard, sumFleet } from "../src/dashboard/console/fleet-merge.js";
 import { enrollCommands, memberStanding } from "../src/dashboard/console/fleet-page.js";
 import { FleetStore } from "../src/dashboard/console/fleet-store.js";
-import { repoRows } from "../src/dashboard/console/repos-page.js";
+import {
+  forgetKeptRepositories,
+  keepRepositories,
+  KEPT_REPOSITORIES_KEY,
+  readKeptRepositories,
+  type KeptRepositories,
+} from "../src/dashboard/console/kept-repositories.js";
+import { AvailableList, repoRows } from "../src/dashboard/console/repos-page.js";
 import { noticeCounts, pageOf } from "../src/dashboard/console/shipyard-app.js";
 import { hitTest, layoutField, type HeaderNode } from "../src/dashboard/field/layout.js";
 import { fieldModel } from "../src/dashboard/field/model.js";
@@ -596,6 +603,150 @@ test("the repositories listed are the ones the app can see and the ones subscrib
     ["acme/Alpha", false, true],
     ["acme/zeta", false, true],
   ]);
+});
+
+// The Repositories page is never drawn empty to be filled in later: what the
+// browser kept of it is in hand on arriving, and is read again behind that.
+
+const seen = (...names: string[]) => names.map((repo) => ({
+  repo, private: false, archived: false, description: null, defaultBranch: "main", htmlUrl: `https://github.com/${repo}`,
+}));
+
+/** A browser's storage, as much as is used of it; `full` has it refuse to keep anything. */
+function fakeStorage(options: { full?: boolean } = {}) {
+  const items = new Map<string, string>();
+  return {
+    items,
+    getItem: (key: string) => items.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      if (options.full) throw new Error("QuotaExceededError");
+      items.set(key, value);
+    },
+    removeItem: (key: string) => { items.delete(key); },
+  };
+}
+
+/** A reading of what the app can see that answers when the test says so. */
+function heldReading() {
+  const asked: Array<{ answer: (repos: ReturnType<typeof seen>) => void; fail: (error: Error) => void }> = [];
+  const read = () => new Promise<ReturnType<typeof seen>>((resolve, reject) => { asked.push({ answer: resolve, fail: reject }); });
+  return { asked, read };
+}
+
+const settle = () => new Promise<void>((resolve) => { setImmediate(resolve); });
+
+test("the Repositories page is kept in the browser as it was last drawn, and what is there that is not it is not read", () => {
+  const storage = fakeStorage();
+  assert.equal(readKeptRepositories(storage), null);
+  const kept: KeptRepositories = {
+    github: GITHUB, repos: [subscribed("acme/mid", "m_a")], members: [{ id: "m_a", name: "atlas" }],
+    available: seen("acme/mid", "acme/zeta"), readAt: NOW,
+  };
+  keepRepositories(storage, kept);
+  assert.deepEqual(readKeptRepositories(storage), kept);
+
+  // Kept before the installation's list was ever read: there is no list, and no time it was read.
+  keepRepositories(storage, { ...kept, available: null, readAt: NOW });
+  assert.deepEqual(readKeptRepositories(storage), { ...kept, available: null, readAt: null });
+
+  // Another version's, or anything else under the name, is nothing.
+  storage.items.set(KEPT_REPOSITORIES_KEY, JSON.stringify({ v: 0, ...kept }));
+  assert.equal(readKeptRepositories(storage), null);
+  storage.items.set(KEPT_REPOSITORIES_KEY, "{not json");
+  assert.equal(readKeptRepositories(storage), null);
+  storage.items.set(KEPT_REPOSITORIES_KEY, JSON.stringify({ v: 1, github: GITHUB }));
+  assert.equal(readKeptRepositories(storage), null);
+
+  // A browser with no room for it keeps nothing, rather than the page of some earlier day.
+  keepRepositories(storage, kept);
+  const full = { ...storage, setItem: fakeStorage({ full: true }).setItem };
+  keepRepositories(full, { ...kept, repos: [] });
+  assert.equal(readKeptRepositories(storage), null);
+
+  keepRepositories(storage, kept);
+  forgetKeptRepositories(storage);
+  assert.equal(readKeptRepositories(storage), null);
+  // No storage at all (a private window) is no error.
+  keepRepositories(null, kept);
+  assert.equal(readKeptRepositories(null), null);
+});
+
+test("on arriving the kept list is in hand at once and is read again, and the reading replaces it", async () => {
+  const { asked, read } = heldReading();
+  let changes = 0;
+  const kept: KeptRepositories = { github: GITHUB, repos: [], members: [], available: seen("acme/old"), readAt: NOW - 3_600_000 };
+  const list = new AvailableList(read, () => { changes += 1; }, kept, () => NOW);
+
+  // Before anything has been asked of GitHub there is a list to draw.
+  assert.deepEqual(list.list, { installation: 9, available: seen("acme/old"), readAt: NOW - 3_600_000 });
+  assert.deepEqual([list.reading, list.fresh], [false, false]);
+
+  list.follow(9);
+  assert.deepEqual([list.reading, list.fresh, asked.length, changes], [true, false, 1, 1]);
+  assert.deepEqual(list.list?.available, seen("acme/old"), "what was kept stays in view while it is read again");
+
+  // The installation is the same every time the fleet is read again: one reading, not one each.
+  list.follow(9);
+  list.follow(9);
+  assert.equal(asked.length, 1);
+
+  asked[0]!.answer(seen("acme/new", "acme/old"));
+  await settle();
+  assert.deepEqual(list.list, { installation: 9, available: seen("acme/new", "acme/old"), readAt: NOW });
+  assert.deepEqual([list.reading, list.fresh, list.error, changes], [false, true, null, 2]);
+
+  // The operator changed what the installation can see: it is read again, with the list still in view.
+  list.stale();
+  list.follow(9);
+  assert.deepEqual([list.reading, asked.length, list.list?.available.length], [true, 2, 2]);
+});
+
+test("a reading that fails leaves the list in hand and says why", async () => {
+  const { asked, read } = heldReading();
+  const kept: KeptRepositories = { github: GITHUB, repos: [], members: [], available: seen("acme/old"), readAt: NOW - 60_000 };
+  const list = new AvailableList(read, () => undefined, kept, () => NOW);
+  list.follow(9);
+  asked[0]!.fail(new ApiError(502, "GITHUB_REFUSED", "GitHub would not list the installation's repositories (502)"));
+  await settle();
+  assert.deepEqual([list.reading, list.fresh], [false, false]);
+  assert.equal(list.error, "GitHub would not list the installation's repositories (502)");
+  assert.deepEqual(list.list, { installation: 9, available: seen("acme/old"), readAt: NOW - 60_000 });
+});
+
+test("a list that is another installation's is dropped, and an answer that comes too late is not taken", async () => {
+  const { asked, read } = heldReading();
+  const kept: KeptRepositories = { github: GITHUB, repos: [], members: [], available: seen("acme/old"), readAt: NOW - 60_000 };
+  const list = new AvailableList(read, () => undefined, kept, () => NOW);
+
+  // The reading is begun for the installation that was kept, before the fleet has been read.
+  list.follow(9);
+  // The fleet says the app is installed somewhere else now.
+  list.follow(12);
+  assert.equal(list.list, null, "the other installation's list is not shown as this one's");
+  assert.deepEqual([list.reading, asked.length], [true, 2]);
+
+  // The first answer arrives after the second was asked for, and last of all.
+  asked[1]!.answer(seen("acme/twelve"));
+  await settle();
+  asked[0]!.answer(seen("acme/nine"));
+  await settle();
+  assert.deepEqual(list.list, { installation: 12, available: seen("acme/twelve"), readAt: NOW });
+  assert.equal(list.reading, false);
+
+  // Uninstalled: there is nothing to list, and a reading under way is nobody's.
+  list.stale();
+  list.follow(12);
+  list.follow(null);
+  assert.deepEqual([list.list, list.reading, list.error], [null, false, null]);
+  asked[2]!.answer(seen("acme/late"));
+  await settle();
+  assert.equal(list.list, null);
+
+  // Nothing kept at all: nothing to show until the first reading is in, which is under way.
+  const first = new AvailableList(read, () => undefined, null, () => NOW);
+  assert.equal(first.list, null);
+  first.follow(9);
+  assert.deepEqual([first.list, first.reading], [null, true]);
 });
 
 test("a member's standing is said in a word, by the platform's clock", () => {

@@ -155,8 +155,22 @@ const available = ['acme/atlas-api', 'acme/atlas-web', 'acme/xj-music', 'acme/do
   defaultBranch: 'main', htmlUrl: `https://github.com/${repo}`,
 }));
 
+/**
+ * GitHub takes its time over the list, and the page has that to show.
+ * `?listing=20000` has it take that many millis, to look at the page while it
+ * reads; `?fail` has the reading fail.
+ */
+const query = new URLSearchParams(location.search);
+const LISTING_MS = Number(query.get('listing')) || 2600;
+const wait = (ms: number) => new Promise((resolve) => { setTimeout(resolve, ms); });
+
 const api = {
-  get: async (path: string) => (path === '/github/repositories' ? { ok: true, available } : { ok: true }),
+  get: async (path: string) => {
+    if (path !== '/github/repositories') return { ok: true };
+    await wait(LISTING_MS);
+    if (query.has('fail')) throw new Error('GitHub would not list the installation\'s repositories (502)');
+    return { ok: true, available };
+  },
   post: async (path: string) => (path === '/fleet/enroll-codes'
     ? { ok: true, code: 'enr_0123456789abcdef0123456789abcdef', expiresAt: new Date(Date.now() + 15 * 60_000).toISOString() }
     : { ok: true }),

@@ -264,8 +264,11 @@ export class SystemMonitor {
   private schedule(afterMs: number): void {
     this.timer = setTimeout(() => {
       this.timer = null;
-      void this.report().then(() => {
-        if (this.running) this.schedule(this.intervalMs);
+      void this.read().catch(() => null).then((reading) => {
+        // Stopped while it was being read: a member on its way out says nothing more.
+        if (!this.running) return;
+        if (reading) this.emitter.emit("system-update", { ...reading });
+        this.schedule(this.intervalMs);
       });
     }, afterMs);
     // Measuring must never be what keeps the process alive.

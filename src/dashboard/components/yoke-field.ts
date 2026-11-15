@@ -6,6 +6,7 @@ import { fieldRepoLabels, stratumLevel, type FieldModel } from '../field/model.j
 import { Painter, type Frame, type Surface } from '../field/painter.js';
 import { readPalette } from '../field/palette.js';
 import { FONT_FACES, TextFitter, type TextStyle } from '../field/text.js';
+import type { EngineView } from '../shared/engine-view.js';
 import type { Selection } from '../shared/inbox.js';
 import type { WorkView } from '../shared/work-view.js';
 
@@ -354,7 +355,7 @@ export class YokeField extends LitElement {
 
   private _hoverId(hit: Hit | null): string | null {
     if (!hit) return null;
-    if (hit.kind === 'work' || hit.kind === 'engine') return hit.node.id;
+    if (hit.kind === 'work' || hit.kind === 'engine' || hit.kind === 'crew') return hit.node.id;
     return hit.kind;
   }
 
@@ -441,8 +442,9 @@ export class YokeField extends LitElement {
       hit === null ? null
         : hit.kind === 'work' ? { kind: 'work', key: hit.key }
           : hit.kind === 'engine' ? { kind: 'engine', index: hit.index }
-            : hit.kind === 'hold' ? { kind: 'hold' }
-              : { kind: 'usage' };
+            : hit.kind === 'crew' ? { kind: 'crew', id: hit.id }
+              : hit.kind === 'hold' ? { kind: 'hold' }
+                : { kind: 'usage' };
     this.dispatchEvent(new CustomEvent<Selection | null>('field-select', { detail: selection, bubbles: true, composed: true }));
   }
 
@@ -489,6 +491,13 @@ export class YokeField extends LitElement {
     </li>`;
   }
 
+  /** An engine as an item of a list: its number in its own pool, and what it is doing. */
+  private _engineItem(engine: EngineView, sayRepo: boolean) {
+    return html`<li data-node="engine:${engine.index}">
+      Engine ${engine.label}: ${engine.line}${engine.model && engine.status === 'active' ? html` · ${engine.model}` : ''}${sayRepo && engine.repo ? html` · ${engine.repo}` : ''}
+    </li>`;
+  }
+
   private _mirror(model: FieldModel) {
     const { vitals } = model;
     const onReactors = model.reactors.flatMap((reactor) => (reactor.work ? [reactor.work] : []));
@@ -508,12 +517,16 @@ export class YokeField extends LitElement {
           until <span class="hold-deadline">${vitals.hold.deadline}</span>
           for ${vitals.hold.reason} · no work is planned or started until then
         </p>` : ''}
-        <h2>Engines: ${vitals.burning} of ${vitals.engines} burning</h2>
-        <ul>
-          ${engines.map((engine) => html`<li data-node="engine:${engine.index}">
-            Engine ${engine.index + 1}: ${engine.line}${engine.model && engine.status === 'active' ? html` · ${engine.model}` : ''}${model.multiProject && engine.repo ? html` · ${engine.repo}` : ''}
-          </li>`)}
-        </ul>
+        ${model.crews === null ? html`
+          <h2>Engines: ${vitals.burning} of ${vitals.engines} burning</h2>
+          <ul>${engines.map((engine) => this._engineItem(engine, model.multiProject))}</ul>
+        ` : model.crews.map((crew) => html`
+          <h2 data-node="header:member:${crew.id}">${crew.name}: ${crew.burning} of ${crew.engines} engines burning</h2>
+          <p>${crew.note.text}. ${crew.usage.title}.</p>
+          <ul>${[...crew.reactors.map((reactor) => reactor.engine), ...crew.bench]
+            .sort((a, b) => a.index - b.index)
+            .map((engine) => this._engineItem(engine, true))}</ul>
+        `)}
         ${onReactors.length > 0 ? html`
           <h2>Burning (${onReactors.length})</h2>
           <ul>${onReactors.map((work) => this._workItem(work, { repo: model.multiProject, level: false }))}</ul>` : ''}

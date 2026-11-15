@@ -31,6 +31,10 @@ export type DashboardEventType =
   // The latest reading of the Claude account's usage window, for the
   // header's usage gauge. Re-emitted on every poll, so the cache holds one.
   | "usage-update"
+  // A fleet member's machine, measured (src/shared/system.ts): processor,
+  // load, memory, disk, its own process, how far away Shipyard is. Emitted
+  // every few seconds by a member, so the cache holds the latest.
+  | "system-update"
   | "shutdown-requested"
   | "engine-shutdown"
   | "app-shutdown"

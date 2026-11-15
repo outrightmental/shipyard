@@ -1426,7 +1426,7 @@ async function main(): Promise<void> {
   let fleet: FleetMember | null = null;
   if (argv.includes("--fleet")) {
     try {
-      fleet = new FleetMember({ emitter, log: write });
+      fleet = new FleetMember({ emitter, log: write, diskPath: defaultCheckoutRootDir() });
     } catch (error) {
       if (!(error instanceof NotEnrolled)) throw error;
       // Not a failure to be retried: nothing changes until someone enrolls it.

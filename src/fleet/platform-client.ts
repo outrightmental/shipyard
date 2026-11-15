@@ -66,6 +66,12 @@ export class PlatformClient {
   private readonly token: string;
   private readonly fetchImpl: typeof fetch;
   private readonly timeoutMs: number;
+  /**
+   * How long Shipyard took to answer the last call it answered at all, in
+   * millis; null before the first. What the member reports as how far away
+   * Shipyard is (system-monitor.ts): it is measured on calls already made.
+   */
+  lastRoundTripMs: number | null = null;
 
   constructor(options: PlatformClientOptions) {
     this.base = options.platformUrl.replace(/\/+$/, "");
@@ -107,6 +113,7 @@ export class PlatformClient {
 
   private async call<T>(method: string, path: string, body?: unknown): Promise<T> {
     let res: Response;
+    const began = performance.now();
     try {
       res = await this.fetchImpl(`${this.base}${path}`, {
         method,
@@ -122,6 +129,7 @@ export class PlatformClient {
     } catch (error) {
       throw new PlatformRefusal(0, "UNREACHABLE", `Shipyard could not be reached: ${error instanceof Error ? error.message : String(error)}`);
     }
+    this.lastRoundTripMs = Math.round(performance.now() - began);
     let json: Record<string, unknown> | null = null;
     try { json = await res.json() as Record<string, unknown>; } catch { /* no body, or not JSON */ }
     if (!res.ok || json?.["ok"] === false) {

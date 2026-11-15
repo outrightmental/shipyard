@@ -13,8 +13,21 @@ import {
   type GitHubRateLimitSnapshot,
 } from "./github-rate-limit.js";
 
+/**
+ * A GitHub token, or where to read the one that is good right now. A token
+ * minted for a GitHub App's installation lasts an hour, and a run outlives
+ * that many times over, so a fleet member (src/fleet/) hands the gateway a
+ * function and every request is signed with the token of the moment.
+ */
+export type GitHubTokenSource = string | (() => string);
+
+/** The token `source` yields now. */
+export function currentGitHubToken(source: GitHubTokenSource): string {
+  return typeof source === "function" ? source() : source;
+}
+
 export interface GitHubApiGatewayOptions {
-  token: string;
+  token: GitHubTokenSource;
   apiBaseUrl?: string;
   userAgent?: string;
   apiVersion?: string;
@@ -108,7 +121,7 @@ function headersToObject(headers: Headers): Record<string, string> {
  */
 export class GitHubApiGateway {
   private readonly apiBaseUrl: string;
-  private readonly token: string;
+  private readonly token: GitHubTokenSource;
   private readonly userAgent: string;
   private readonly apiVersion: string;
   private readonly fetchImpl: typeof fetch;
@@ -234,7 +247,7 @@ export class GitHubApiGateway {
       headers.set("Accept", "application/vnd.github+json");
     }
     if (!headers.has("Authorization")) {
-      headers.set("Authorization", "Bearer".concat(" ", this.token));
+      headers.set("Authorization", "Bearer".concat(" ", currentGitHubToken(this.token)));
     }
     if (!headers.has("User-Agent")) {
       headers.set("User-Agent", this.userAgent);

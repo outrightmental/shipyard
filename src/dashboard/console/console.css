@@ -426,7 +426,11 @@ form.console-row { align-items: flex-end; }
 
 .console-table-tools { margin-bottom: 10px; }
 .console-table-tools .console-input { width: 260px; }
-.console-table { width: 100%; border-collapse: collapse; }
+/* The columns are as wide as the headings say, whatever is in them: nothing moves when the list arrives. */
+.console-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.console-table th:nth-child(2) { width: 340px; }
+.console-table th:nth-child(3) { width: 150px; }
+.console-table td:first-child { overflow-wrap: anywhere; }
 .console-table th {
   padding: 8px 10px;
   text-align: left;
@@ -443,7 +447,100 @@ form.console-row { align-items: flex-end; }
 .console-table td:nth-child(2) .console-standing { margin-left: 8px; }
 .console-table tr.is-subscribed td { background: var(--shell-raised); }
 .console-table tr:not(.is-subscribed) .console-link { color: var(--shell-fg); }
-.console-cell-action { width: 1%; text-align: right; white-space: nowrap; }
+.console-cell-action { text-align: right; white-space: nowrap; }
+
+@media (max-width: 720px) {
+  .console-table th:nth-child(2) { width: 190px; }
+  .console-table th:nth-child(3) { width: 120px; }
+  .console-table td:nth-child(2) { white-space: normal; }
+}
+
+/* ── Something is being read ──
+ *
+ * Said three ways at once, so it cannot be missed and is never only a
+ * picture: in words beside a spinner, by a bar that sweeps under the list's
+ * headings, and — when there is no list yet to show — by rows standing in for
+ * the ones on their way. All of it in trim: reading is not a signal.
+ */
+
+.console-spinner {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  flex: none;
+  border: 2px solid var(--shell-line-strong);
+  border-top-color: var(--trim-bright);
+  border-radius: 50%;
+  animation: consoleSpin .8s linear infinite;
+}
+.console-starting .console-spinner { margin-right: 10px; }
+@keyframes consoleSpin { to { transform: rotate(360deg); } }
+
+.console-activity {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  min-height: 18px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-0);
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--shell-fg-bright);
+  white-space: nowrap;
+}
+
+/* The bar is always there, two pixels of nothing, so the list does not move when a reading begins or ends. */
+.console-table .console-table-activity td { padding: 0; border: none; background: none; }
+.console-progress { position: relative; height: 2px; overflow: hidden; }
+.console-progress.is-on { background: var(--shell-line); }
+.console-progress.is-on::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 28%;
+  border-radius: 2px;
+  background: var(--trim-bright);
+  animation: consoleSweep 1.25s cubic-bezier(.45, 0, .55, 1) infinite;
+}
+/* From wholly off the left-hand end to wholly off the right: the bar is 28% of its track. */
+@keyframes consoleSweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(358%); }
+}
+
+.console-bone {
+  display: block;
+  width: 42%;
+  height: 11px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--shell-raised-2) 0%, var(--shell-raised-3) 50%, var(--shell-raised-2) 100%);
+  background-size: 200% 100%;
+  animation: consoleShimmer 1.5s linear infinite;
+}
+.console-placeholder td { height: 55px; }
+.console-placeholder td:nth-child(2) .console-bone { width: 96px; }
+.console-placeholder td:nth-child(3) .console-bone { width: 88px; height: 26px; margin-left: auto; }
+.console-placeholder:nth-child(3n) td:first-child .console-bone { width: 56%; }
+.console-placeholder:nth-child(3n + 1) td:first-child .console-bone { width: 34%; }
+@keyframes consoleShimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+
+/* Asked for less motion: the words still say it, and what moved holds still or only breathes. */
+@media (prefers-reduced-motion: reduce) {
+  .console-spinner { animation-duration: 2.4s; }
+  .console-progress.is-on::after { width: 100%; animation: consoleBreathe 2s ease-in-out infinite; }
+  .console-bone { animation: none; }
+}
+@keyframes consoleBreathe {
+  0%, 100% { opacity: .35; }
+  50% { opacity: .9; }
+}
 
 @media (max-width: 720px) {
   .console { grid-template-columns: var(--sidebar-w-collapsed) minmax(0, 1fr); }

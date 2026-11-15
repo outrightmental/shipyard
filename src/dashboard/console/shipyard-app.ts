@@ -7,6 +7,7 @@ import type { Auth } from './auth.js';
 import './fleet-page.js';
 import type { ConsoleView, FleetStore } from './fleet-store.js';
 import { icons } from './icons.js';
+import { browserStorage, forgetKeptRepositories } from './kept-repositories.js';
 import './repos-page.js';
 
 /** The console's pages, by the name each goes by in the address (`#/fleet`). */
@@ -100,6 +101,12 @@ export class ShipyardApp extends LitElement {
     this._page = page;
   }
 
+  /** Signing out leaves nothing of the fleet in this browser. */
+  private _signOut() {
+    forgetKeptRepositories(browserStorage());
+    void this.auth?.signOut();
+  }
+
   private _toggle() {
     this._collapsed = !this._collapsed;
     try { localStorage.setItem(NAV_KEY, this._collapsed ? '1' : '0'); } catch { /* no storage */ }
@@ -132,7 +139,7 @@ export class ShipyardApp extends LitElement {
         <div class="console-foot">
           ${view.operatorEmail ? html`<div class="console-who" title="Signed in as ${view.operatorEmail}">${view.operatorEmail}</div>` : nothing}
           ${release ? html`<div class="console-who console-release" title="The commit Shipyard runs">${release}</div>` : nothing}
-          <button class="console-item" type="button" title="Sign out" @click=${() => { void this.auth?.signOut(); }}>
+          <button class="console-item" type="button" title="Sign out" @click=${() => this._signOut()}>
             ${icons.signOut()}<span class="console-item-text">Sign out</span>
           </button>
           <button
@@ -149,8 +156,12 @@ export class ShipyardApp extends LitElement {
   }
 
   private _pageBody(view: ConsoleView) {
-    if (!view.loaded) {
-      return html`<div class="console-starting" role="status">${view.error ? `Shipyard could not be read: ${view.error}` : 'Reading the fleet…'}</div>`;
+    // Until the fleet has been read a page has nothing to draw — but for
+    // Repositories, which draws what this browser kept of it the last time.
+    if (!view.loaded && this._page !== 'repositories') {
+      return view.error
+        ? html`<div class="console-starting" role="status">Shipyard could not be read: ${view.error}</div>`
+        : html`<div class="console-starting" role="status"><span class="console-spinner" aria-hidden="true"></span>Reading the fleet…</div>`;
     }
     switch (this._page) {
       case 'fleet':

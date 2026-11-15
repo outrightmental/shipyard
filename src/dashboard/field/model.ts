@@ -1,9 +1,10 @@
-import type { DashboardState } from '../store/types.js';
+import type { DashboardState, FleetCrew } from '../store/types.js';
 import type { BurnLevel } from '../shared/burn-level.js';
 import { engineViews, type EngineView } from '../shared/engine-view.js';
-import { formatLogTime } from '../shared/format.js';
+import { formatClockTime, formatDuration, formatLogTime } from '../shared/format.js';
 import type { InboxCard, Selection } from '../shared/inbox.js';
-import { vitals, type Vitals } from '../shared/vitals.js';
+import { usageGaugeView, usageLimitUntilMs, type UsageGaugeView } from '../shared/usage-gauge.js';
+import { liveHold, vitals, type Vitals } from '../shared/vitals.js';
 import { compareProjectWork, workViews, type WorkView } from '../shared/work-view.js';
 
 /**
@@ -23,6 +24,18 @@ export interface FieldModel {
   reactors: Reactor[];
   /** The engines that are not: idle, parked by a limit, finished, shut down. */
   bench: EngineView[];
+  /**
+   * On Shipyard's dashboard, the fleet's members, in the order they joined:
+   * the burning section is then a group for each, headed by the member's name
+   * and its Claude account's usage, with that member's reactors and bench
+   * under it. Every reactor and every engine on the bench is in exactly one.
+   * Null on a pool's own dashboard, where the engines are one pool under one
+   * heading.
+   */
+  crews: Crew[] | null;
+  /** What the field says where the work would be, when there is none: before
+   *  the first of it has arrived, and once it has and there is nothing open. */
+  notes: { loading: string; empty: string };
   /** The work no engine is on, a group for each project, in the order of their
    *  names; a project with none left out. */
   strata: Stratum[];
@@ -46,6 +59,31 @@ export interface Reactor {
   engine: EngineView;
   /** Null only for an action that names no issue and no PR. */
   work: WorkView | null;
+}
+
+/**
+ * One fleet member's group in the burning section: what a pool's own
+ * dashboard says once, along its top, said for this member alone.
+ */
+export interface Crew {
+  id: string;
+  name: string;
+  /** Its engines running an action, with the work each is on. */
+  reactors: Reactor[];
+  /** Its engines that are not. */
+  bench: EngineView[];
+  /** How many engines it has on the field, and how many of them are burning. */
+  engines: number;
+  burning: number;
+  /** Its Claude account's usage window nearest its limit. */
+  usage: UsageGaugeView;
+  /** What its heading says of it after the gauge, and how: `plain` is how it
+   *  is doing; `held`, something is holding it up that will pass by itself or
+   *  wants assigning; `down`, it is not there, or something is wrong with it. */
+  note: { text: string; tone: 'plain' | 'held' | 'down' };
+  /** The repositories assigned to it. */
+  repos: string[];
+  online: boolean;
 }
 
 /** A level a piece of work can be drawn at below the reactors. */
@@ -162,6 +200,28 @@ function compareRepos(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
+/** What a member's heading says of it, most pressing first. */
+function crewNote(crew: FleetCrew, burning: number, engines: number, nowMs: number): Crew['note'] {
+  if (!crew.online) {
+    const ago = crew.lastSeenAtMs === null ? '' : ` · last heard from ${formatDuration(Math.max(0, nowMs - crew.lastSeenAtMs))} ago`;
+    return { text: crew.lastSeenAtMs === null ? 'has not connected yet' : `offline${ago}`, tone: 'down' };
+  }
+  if (crew.problem) return { text: crew.problem, tone: 'down' };
+  if (crew.stopped) return { text: 'stopped — its service starts it again', tone: 'held' };
+  if (crew.stopping) return { text: 'finishing what is in flight, then restarting', tone: 'held' };
+  const hold = liveHold(crew.hold, nowMs);
+  if (hold) {
+    return {
+      text: `waiting ${formatDuration(hold.untilMs - nowMs)} until ${formatClockTime(hold.untilMs)} for ${hold.reason}`,
+      tone: 'held',
+    };
+  }
+  if (crew.repos.length === 0) return { text: 'assigned no repositories', tone: 'held' };
+  if (engines === 0) return { text: 'starting its engines', tone: 'plain' };
+  if (burning === 0) return { text: 'no engine is running an action', tone: 'plain' };
+  return { text: burning === 1 ? 'an engine is running an action' : 'engines are running actions', tone: 'plain' };
+}
+
 export function fieldModel(
   state: DashboardState,
   nowMs: number,
@@ -203,6 +263,27 @@ export function fieldModel(
     .sort(([a], [b]) => compareRepos(a, b))
     .map(([repo, group]) => ({ repo, works: group.sort(compareProjectWork) }));
 
+  // On Shipyard's dashboard every engine is some member's, and is drawn in
+  // that member's group. An engine of a member the fleet no longer lists has
+  // nowhere to be drawn, and is not.
+  const crews: Crew[] | null = state.fleet === null ? null : state.fleet.map((crew) => {
+    const mine = reactors.filter((reactor) => reactor.engine.memberId === crew.id);
+    const idle = bench.filter((engine) => engine.memberId === crew.id);
+    const count = mine.length + idle.length;
+    return {
+      id: crew.id,
+      name: crew.name,
+      reactors: mine,
+      bench: idle,
+      engines: count,
+      burning: mine.length,
+      usage: usageGaugeView(crew.usage, nowMs, usageLimitUntilMs(liveHold(crew.hold, nowMs))),
+      note: crewNote(crew, mine.length, count, nowMs),
+      repos: crew.repos,
+      online: crew.online,
+    };
+  });
+
   const tethers: Tether[] = [];
   const known = new Set(works.map((work) => work.key));
   for (const card of ui.cards ?? []) {
@@ -219,6 +300,10 @@ export function fieldModel(
     vitals: vitals(state, nowMs),
     reactors,
     bench,
+    crews,
+    notes: state.fleet === null
+      ? { loading: 'Connecting to yoke…', empty: 'No open issues or pull requests.' }
+      : { loading: 'Reading the fleet…', empty: 'No open issues or pull requests in the repositories Shipyard is subscribed to.' },
     strata,
     works,
     ribbon: state.eventStream.slice(-RIBBON_MAX_LINES).map((line) => ({
@@ -232,6 +317,6 @@ export function fieldModel(
     selection,
     multiProject: state.multiProject,
     dark,
-    loaded: state.lifecycleByRepo.size > 0 || works.length > 0,
+    loaded: state.lifecycleByRepo.size > 0 || works.length > 0 || state.fleet !== null,
   };
 }

@@ -15,7 +15,8 @@
     "start": "npm run build && node dist/src/index.js",
     "test": "node --import tsx --test --test-force-exit \"test/**/*.test.ts\"",
     "build:lambda": "node tools/build-lambda.mjs",
-    "build:console": "node tools/build-console.mjs"
+    "build:console": "node tools/build-console.mjs",
+    "demo:console": "node tools/console-demo.mjs"
   },
   "repository": {
     "type": "git",

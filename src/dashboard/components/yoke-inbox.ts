@@ -176,6 +176,14 @@ export class YokeInbox extends LitElement {
           title="${action.hint}"
           @click=${(event: Event) => event.stopPropagation()}
         >${action.label}<span class="inbox-out" aria-hidden="true">↗</span></a>`;
+      case 'navigate':
+        return html`<button
+          class="inbox-action open navigate"
+          type="button"
+          title="${action.hint}"
+          aria-label="${action.hint}"
+          @click=${(event: Event) => { event.stopPropagation(); this._emit<string>('inbox-navigate', action.page); }}
+        >${action.label}</button>`;
       case 'keep-awake':
         return html`<button
           class="inbox-action wake"

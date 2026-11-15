@@ -31,6 +31,14 @@ interface DashboardServerConfig {
   multiProject?: boolean;
   /** All project repo keys ("owner/repo"), in configured order. */
   projects?: string[];
+  /**
+   * A fleet member's own screen (Shipyard): it shows what the member is
+   * working on and what is waiting on a person, and takes no decisions —
+   * those are made in Shipyard. A press that reaches it anyway is refused.
+   */
+  readOnly?: boolean;
+  /** What this is a dashboard of, said under its title: "Yoke", or "Shipyard". */
+  brand?: string;
   /** Event emitter the engine pool publishes to. When provided, cylinder-cancel
    *  signals are emitted to it (not globalEventEmitter). App-level events
    *  (shutdown-requested, app-shutdown) are still received via globalEventEmitter. */
@@ -124,6 +132,10 @@ async function serveMedia(
   res.end(req.method === "HEAD" ? undefined : slice);
 }
 
+/** Why a press of Approve on a fleet member's own screen is refused. */
+export const READ_ONLY_REASON =
+  "this screen shows what its fleet member is working on — approve it in Shipyard";
+
 /** Why a press of Approve from a page `isSameOriginRequest` turns away is refused. */
 export const NOT_OWN_PAGE_REASON =
   "this page's address is not one yoke takes approvals from — open the dashboard by IP address or as localhost";
@@ -166,6 +178,8 @@ export class DashboardServer {
   private dashboardTitle: string;
   private multiProject: boolean;
   private projects: string[];
+  private readOnly: boolean;
+  private brand: string;
   private server: http.Server;
   private wss: WebSocketServer;
   private maxConcurrency: number = 3;
@@ -183,6 +197,8 @@ export class DashboardServer {
     this.dashboardTitle = config.dashboardTitle ?? "Outright Mental";
     this.multiProject = config.multiProject ?? false;
     this.projects = config.projects ?? [];
+    this.readOnly = config.readOnly ?? false;
+    this.brand = config.brand ?? "Yoke";
     if (typeof config.maxConcurrency === "number") this.maxConcurrency = config.maxConcurrency;
     this.projectEmitter = config.eventEmitter ?? globalEventEmitter;
 
@@ -279,6 +295,8 @@ export class DashboardServer {
         maxConcurrency: this.maxConcurrency,
         multiProject: this.multiProject,
         projects: this.projects,
+        readOnly: this.readOnly,
+        brand: this.brand,
         cachedEvents: this.replayableEvents(),
       });
       return;
@@ -311,7 +329,7 @@ export class DashboardServer {
           pullRequestNumber?: unknown;
         };
         if (message.type === "cylinder-cancel-request" && typeof message.engineIndex === "number") {
-          this.projectEmitter.emit("cylinder-cancel", { engineIndex: message.engineIndex });
+          if (!this.readOnly) this.projectEmitter.emit("cylinder-cancel", { engineIndex: message.engineIndex });
         } else if (message.type === "pull-request-approve-request") {
           this.handleApproveRequest(ws, message.repo, message.pullRequestNumber, sameOrigin);
         }
@@ -331,14 +349,16 @@ export class DashboardServer {
    */
   private handleApproveRequest(ws: WebSocket, repo: unknown, pullRequestNumber: unknown, sameOrigin: boolean): void {
     const target = this.approvalTarget(repo, pullRequestNumber);
-    if (sameOrigin && target !== undefined) {
+    if (sameOrigin && target !== undefined && !this.readOnly) {
       this.projectEmitter.emit("pull-request-approve", target);
       return;
     }
     // A pill names its PR by a positive whole number: anything else is no pill's.
     if (typeof pullRequestNumber !== "number" || !Number.isInteger(pullRequestNumber) || pullRequestNumber <= 0) return;
     const named = typeof repo === "string" ? repo : "";
-    const reason = !sameOrigin
+    const reason = this.readOnly
+      ? READ_ONLY_REASON
+      : !sameOrigin
       ? NOT_OWN_PAGE_REASON
       : named !== ""
         ? `${named} is not one of this dashboard's projects`
@@ -447,6 +467,16 @@ export class DashboardServer {
         // One dead client must not stop the others from being served.
       }
     }
+  }
+
+  /**
+   * The projects this dashboard is of, when they change while it runs: a
+   * fleet member is assigned repositories, and has them taken away, without
+   * being restarted.
+   */
+  setProjects(projects: readonly string[]): void {
+    this.projects = [...projects];
+    this.multiProject = projects.length > 1;
   }
 
   async initialize(): Promise<void> {

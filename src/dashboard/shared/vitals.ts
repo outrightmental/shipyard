@@ -22,6 +22,9 @@ export type RunPhase = 'running' | 'shutting-down' | 'shut-down';
  * hold banner and a status bar, as one reading of the run.
  */
 export interface Vitals {
+  /** What this is a dashboard of, said small under the title: "YOKE" for a
+   *  pool run by hand, "SHIPYARD" for the fleet's and for a fleet member's. */
+  brand: string;
   /** The dashboard's title, as configured (`dashboard_title`). */
   title: string;
   /** "4 projects", or the one project's "owner/repo". */
@@ -43,6 +46,17 @@ export interface Vitals {
   burning: number;
   eventCount: number;
   sessionCount: number;
+}
+
+/** "2 fleet members · 5 repositories": how much the fleet's dashboard is the sum of. */
+function fleetSubtitle(state: DashboardState): string {
+  const members = state.fleet?.length ?? 0;
+  const repos = state.lifecycleByRepo.size;
+  const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+  return [
+    count(members, 'fleet member', 'fleet members'),
+    ...(repos > 0 ? [count(repos, 'repository', 'repositories')] : []),
+  ].join(' · ');
 }
 
 /** A hold that is still running at `nowMs`, or null. */
@@ -74,15 +88,18 @@ export function vitals(state: DashboardState, nowMs: number): Vitals {
 
   const projectCount = state.sessionCountByRepo.size || state.lifecycleByRepo.size;
   // With several projects there is no one repository to name or link to.
-  const subtitle = state.multiProject
-    ? (projectCount > 1 ? `${projectCount} projects` : '')
-    : (state.owner && state.repo ? `${state.owner}/${state.repo}` : '');
+  const subtitle = state.fleet !== null
+    ? fleetSubtitle(state)
+    : state.multiProject
+      ? (projectCount > 1 ? `${projectCount} projects` : '')
+      : (state.owner && state.repo ? `${state.owner}/${state.repo}` : '');
   const homeUrl = state.multiProject
     ? `https://github.com/${state.owner || ''}`
     : `https://github.com/${state.owner}/${state.repo}`;
 
   return {
-    title: state.title || 'Yoke',
+    brand: state.brand || 'Yoke',
+    title: state.title || state.brand || 'Yoke',
     subtitle,
     homeUrl,
     cycle,

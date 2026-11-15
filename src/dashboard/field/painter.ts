@@ -500,7 +500,90 @@ export class Painter {
     ctx.globalAlpha = 1;
   }
 
+  /**
+   * A fleet member's heading, on Shipyard's dashboard: its name, how many of
+   * its engines are burning, its Claude account's usage — the gauge a pool's
+   * own dashboard has in its top corner, here once per member — and a line on
+   * how it is doing. The name and the gauge are trim; a signal colours only
+   * what it is a signal of: the gauge as its window fills, and the line when
+   * the member is held up or not there.
+   */
+  private _memberHeader(ctx: Ctx, frame: Frame, node: HeaderNode, x: number, y: number): void {
+    const p = this._palette;
+    const crew = frame.model.crews?.find((candidate) => candidate.id === node.crewId);
+    if (!crew) return;
+    const cy = y + node.rect.h - 12;
+    const end = x + node.rect.w;
+    const focused = frame.hover === node.id || frame.focus === node.id
+      || (frame.model.selection?.kind === 'crew' && frame.model.selection.id === crew.id);
+
+    const label = this._fitter.fit(crew.name.toUpperCase(), HEADER_STYLE, Math.max(60, node.rect.w * 0.4));
+    this._text(ctx, label, x, cy, HEADER_STYLE, rgba(p.trimBright, focused ? 1 : crew.online ? 0.86 : 0.6));
+    let cursor = x + this._fitter.width(label, HEADER_STYLE) + 8;
+
+    if (crew.engines > 0) {
+      const count = `${crew.burning}/${crew.engines}`;
+      this._text(ctx, count, cursor, cy, HEADER_COUNT_STYLE, rgba(p.trim, 0.9));
+      cursor += this._fitter.width(count, HEADER_COUNT_STYLE) + 14;
+    } else {
+      cursor += 6;
+    }
+
+    // The gauge: a small ring that fills as the usage window is used up, and
+    // what it reads beside it. Left out when there is no room for the words.
+    const gauge = crew.usage;
+    const tone: Rgb = gauge.tone === 'critical' ? p.red : gauge.tone === 'warn' ? p.yellow : p.trimBright;
+    const alpha = gauge.tone === 'unknown' ? 0.4 : 1;
+    const reading = `${gauge.label} ${gauge.percentText}`;
+    const resets = gauge.resetText === '—' ? '' : `RESETS IN ${gauge.resetText.toUpperCase()}`;
+    const gaugeW = 18 + this._fitter.width(reading, HEADER_COUNT_STYLE) + (resets ? 10 + this._fitter.width(resets, HEADER_COUNT_STYLE) : 0);
+    if (end - cursor > gaugeW + 24) {
+      const r = 5;
+      const gx = cursor + r;
+      ctx.lineCap = 'butt';
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = rgba(p.trim, 0.24);
+      ctx.beginPath();
+      ctx.arc(gx, cy, r, 0, TAU);
+      ctx.stroke();
+      if (gauge.fillPercent > 0) {
+        ctx.strokeStyle = rgba(tone, alpha);
+        ctx.beginPath();
+        ctx.arc(gx, cy, r, -Math.PI / 2, -Math.PI / 2 + TAU * Math.min(1, gauge.fillPercent / 100));
+        ctx.stroke();
+      }
+      cursor += 18;
+      this._text(ctx, reading, cursor, cy, HEADER_COUNT_STYLE, rgba(tone, alpha));
+      cursor += this._fitter.width(reading, HEADER_COUNT_STYLE) + 10;
+      if (resets) {
+        this._text(ctx, resets, cursor, cy, HEADER_COUNT_STYLE, rgba(p.trimDim, 0.86));
+        cursor += this._fitter.width(resets, HEADER_COUNT_STYLE) + 10;
+      }
+      cursor += 4;
+    }
+
+    // Held up is orange, as a hold is; not there, or something wrong, is red.
+    const ink = crew.note.tone === 'down' ? rgba(p.red, 1)
+      : crew.note.tone === 'held' ? rgba(p.orange, 1)
+        : rgba(p.trimDim, 0.78);
+    const fitted = this._fitter.fit(crew.note.text, HEADER_NOTE_STYLE, end - cursor - 40);
+    this._text(ctx, fitted, cursor, cy, HEADER_NOTE_STYLE, ink);
+    cursor += this._fitter.width(fitted, HEADER_NOTE_STYLE) + 14;
+
+    if (end - cursor > 12) {
+      const rule = ctx.createLinearGradient(cursor, 0, end, 0);
+      rule.addColorStop(0, rgba(p.trim, 0.26));
+      rule.addColorStop(1, rgba(p.trim, 0));
+      ctx.fillStyle = rule;
+      ctx.fillRect(cursor, Math.round(cy), end - cursor, 1);
+    }
+  }
+
   private _header(ctx: Ctx, frame: Frame, node: HeaderNode, x: number, y: number): void {
+    if (node.heads === 'member') {
+      this._memberHeader(ctx, frame, node, x, y);
+      return;
+    }
     const p = this._palette;
     const { vitals, dark } = frame.model;
     const cy = y + node.rect.h - 12;
@@ -725,7 +808,7 @@ export class Painter {
       const labelled = ring.r >= 28;
       this._text(ctx, engine.clock, ring.cx, ring.cy - (labelled ? ring.r * 0.1 : 0), mono(600, size), rgba(p.trimBright, 1), 'center');
       if (labelled) {
-        this._text(ctx, `ENGINE ${engine.index + 1}`, ring.cx, ring.cy + ring.r * 0.34, mono(500, 7.5, 1), rgba(p.trimDim, 0.95), 'center');
+        this._text(ctx, `ENGINE ${engine.label}`, ring.cx, ring.cy + ring.r * 0.34, mono(500, 7.5, 1), rgba(p.trimDim, 0.95), 'center');
       }
       return;
     }
@@ -742,7 +825,7 @@ export class Painter {
     ctx.arc(ring.cx, ring.cy, ring.r, 0, TAU);
     ctx.stroke();
     this._text(
-      ctx, String(engine.index + 1), ring.cx, ring.cy + 0.5,
+      ctx, String(engine.label), ring.cx, ring.cy + 0.5,
       mono(600, Math.max(8, Math.min(11, ring.r * 0.95))), rgba(tone, strong ? 0.95 : 0.8), 'center',
     );
     const labelX = ring.cx + ring.r + 9;
@@ -787,7 +870,9 @@ export class Painter {
     const title = this._fitter.fit(vitals.title.toUpperCase(), HUD_TITLE_STYLE, hud.title.w);
     const focused = frame.hover === 'title' || frame.focus === 'title';
     this._text(ctx, title, hud.title.x, 26, HUD_TITLE_STYLE, rgba(p.trimBright, focused ? 1 : 0.94));
-    const sub = ['YOKE', vitals.subtitle.toUpperCase()].filter((part) => part !== '').join(' · ');
+    // Not said twice, when the title is the brand itself.
+    const brand = vitals.brand.toUpperCase();
+    const sub = [brand === vitals.title.toUpperCase() ? '' : brand, vitals.subtitle.toUpperCase()].filter((part) => part !== '').join(' · ');
     this._text(ctx, this._fitter.fit(sub, HUD_SUB_STYLE, hud.title.w), hud.title.x, 47, HUD_SUB_STYLE, rgba(p.trimDim, 0.9));
 
     for (const slot of hud.slots) this._hudSlot(ctx, frame, slot);

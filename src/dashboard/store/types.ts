@@ -26,6 +26,13 @@ export interface CylinderState {
   actionStartedAt: number | null;
   nextCycleAtMs: number | null;
   rateLimitedUntilMs: number | null;
+  /** On Shipyard's dashboard, the fleet member whose engine this is; absent on
+   *  a pool's own dashboard, where every engine is the one pool's. */
+  memberId?: string;
+  /** On Shipyard's dashboard, its number within its member's pool, from 1 —
+   *  what its ring says. `index` is then its number across the whole fleet,
+   *  which is what tells it from every other engine on the field. */
+  memberIndex?: number;
 }
 
 /**
@@ -136,6 +143,58 @@ export interface LifecyclePair {
   /** Set while yoke has asked a person to review the PR on GitHub and waits
    *  for it (Project SDLC). The inbox lists it, with a link to the PR. */
   awaitingReview?: boolean;
+  /** Set on work in a repository Shipyard is subscribed to and no fleet member
+   *  is assigned: it is on the field, and nothing is coming for it until one is. */
+  unassigned?: boolean;
+}
+
+/**
+ * One fleet member, on Shipyard's dashboard: a machine and a Claude account,
+ * with a pool of engines of its own. What a pool's own dashboard says once
+ * for the whole run — the account's usage, a hold parking every engine, that
+ * it is shutting down — Shipyard says once per member, in the heading of that
+ * member's group of engines.
+ */
+export interface FleetCrew {
+  id: string;
+  name: string;
+  /** Heard from lately (src/shared/protocol.ts `memberOnline`). */
+  online: boolean;
+  /** Epoch millis it was last heard from; null if it never has been. */
+  lastSeenAtMs: number | null;
+  /** The latest reading of its Claude account's usage, or null before the first. */
+  usage: AccountUsage | null;
+  /** The hold parking its pool, or null. */
+  hold: WorkHold | null;
+  /** Its process is finishing what is in flight and stopping — to update itself, usually. */
+  stopping: boolean;
+  /** Its process has stopped. */
+  stopped: boolean;
+  /** The repositories assigned to it, "owner/repo". */
+  repos: string[];
+  /** What it has said is wrong with it, in a line; null when nothing is. */
+  problem: string | null;
+}
+
+/**
+ * Something about the fleet an operator should be told: a repository nobody
+ * is assigned, a member assigned nothing, a member that is not there. Each is
+ * a card in the inbox. (`FleetNotice` in src/shared/notices.ts, worked into
+ * what a card says.)
+ */
+export interface FleetNoticeCard {
+  /** Stable for as long as the notice stands. */
+  id: string;
+  /** An alarm stops work that was under way; a warning is work not started. */
+  accent: 'warning' | 'alarm';
+  eyebrow: string;
+  title: string;
+  /** "owner/repo" it is about, or empty. */
+  repo: string;
+  facts: string[];
+  line: string;
+  /** Where its button goes: a page of the console, or a page on GitHub. */
+  action: { label: string; hint: string; page?: string; href?: string } | null;
 }
 
 /** Where one dashboard approval stands (#276); see `PullRequestApprovalStatus`. */
@@ -294,4 +353,16 @@ export interface DashboardState {
   owner: string;
   repo: string;
   title: string;
+  /** What this is a dashboard of: "Yoke" for a pool run by hand, "Shipyard"
+   *  for the fleet's dashboard and for a fleet member's own screen. */
+  brand: string;
+  /** Shipyard's dashboard: the fleet's members, in the order they joined, each
+   *  with the engines in `cylinders` that carry its id. Null on a pool's own
+   *  dashboard, whose engines are one pool and need no heading. */
+  fleet: FleetCrew[] | null;
+  /** What the fleet has to say to an operator; empty on a pool's own dashboard. */
+  notices: FleetNoticeCard[];
+  /** A fleet member's own screen: it shows what is waiting on a person, and
+   *  takes no decisions — those are made in Shipyard. */
+  readOnly: boolean;
 }

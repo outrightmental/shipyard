@@ -2,7 +2,7 @@ import type { BurnLevel } from '../shared/burn-level.js';
 import type { EngineView } from '../shared/engine-view.js';
 import type { WorkView } from '../shared/work-view.js';
 import { contains, rect, type Rect } from './geometry.js';
-import { levelCounts, RIBBON_MAX_LINES, STRATUM_LEVELS, stratumLevel, type FieldModel, type StratumLevel } from './model.js';
+import { levelCounts, RIBBON_MAX_LINES, STRATUM_LEVELS, stratumLevel, type FieldModel, type Reactor, type StratumLevel } from './model.js';
 
 export type { StratumLevel };
 
@@ -161,16 +161,20 @@ export interface HeaderNode {
   kind: 'header';
   id: string;
   rect: Rect;
-  /** What it heads: the reactors (`burning`), or one project's work below
-   *  them (`project`, #290). */
-  heads: 'burning' | 'project';
+  /** What it heads: the reactors (`burning`); on Shipyard's dashboard one
+   *  fleet member's reactors and bench (`member`); or one project's work
+   *  below them (`project`, #290). */
+  heads: 'burning' | 'member' | 'project';
+  /** For `member`: the fleet member, whose name and usage the heading says
+   *  (`FieldModel.crews`). Empty otherwise. */
+  crewId: string;
   /** The project, "owner/repo", for a project's heading; empty for the
    *  reactors', and for work that named no project. */
   repo: string;
   /** How many pieces of work the project has below the reactors; for
-   *  `burning`, how many engines are burning. */
+   *  `burning` and `member`, how many engines are burning. */
   count: number;
-  /** For `burning`: the size of the pool. */
+  /** For `burning` and `member`: the size of the pool. */
   total: number | null;
   /** For a project: how much of its work is at each level, hottest first,
    *  levels with none left out. Empty for `burning`. */
@@ -223,28 +227,23 @@ function padding(width: number): number {
   return width < 600 ? 14 : 28;
 }
 
-/** The content, laid out at one density, and how tall it came to. */
-function layoutContent(model: FieldModel, width: number, density: Density): { nodes: FieldNode[]; height: number } {
-  const nodes: FieldNode[] = [];
-  let y = 8;
+/**
+ * One pool of engines: a reactor for each of them running an action, then the
+ * bench for the rest. Returns where the next thing goes.
+ */
+function layoutPool(
+  nodes: FieldNode[],
+  reactors: readonly Reactor[],
+  bench: readonly EngineView[],
+  width: number,
+  density: Density,
+  top: number,
+): number {
+  let y = top;
+  const engineCount = reactors.length + bench.length;
 
-  if (model.vitals.hold !== null) {
-    nodes.push({ kind: 'hold', id: 'hold', rect: rect(0, y, width, HOLD_HEIGHT) });
-    y += HOLD_HEIGHT + density.gap;
-  }
-
-  // ── Burning: a reactor for every engine running an action ────────────────
-  const engineCount = model.reactors.length + model.bench.length;
-  if (engineCount > 0) {
-    nodes.push({
-      kind: 'header', id: 'header:burning', rect: rect(0, y, width, density.headerH),
-      heads: 'burning', repo: '', count: model.reactors.length, total: engineCount, levels: [], bands: [],
-    });
-    y += density.headerH;
-  }
-
-  if (model.reactors.length > 0) {
-    const n = model.reactors.length;
+  if (reactors.length > 0) {
+    const n = reactors.length;
     const fit = Math.max(1, Math.floor((width + COLUMN_GAP) / (density.reactorMinW + COLUMN_GAP)));
     // The columns are set by the size of the pool, not by how many engines
     // happen to be burning: as many rows as the whole pool would take, then
@@ -255,7 +254,7 @@ function layoutContent(model: FieldModel, width: number, density: Density): { no
     const rows = Math.ceil(n / cols);
     const cellW = Math.min(REACTOR_MAX_W, (width - COLUMN_GAP * (cols - 1)) / cols);
     const ringGap = Math.round(density.ringD * 0.26);
-    model.reactors.forEach((reactor, i) => {
+    reactors.forEach((reactor, i) => {
       const x = (i % cols) * (cellW + COLUMN_GAP);
       const top = y + Math.floor(i / cols) * density.reactorH;
       const r = density.ringD / 2;
@@ -286,13 +285,13 @@ function layoutContent(model: FieldModel, width: number, density: Density): { no
   }
 
   // ── The bench: the engines that are not running an action ───────────────
-  if (model.bench.length > 0) {
+  if (bench.length > 0) {
     const fit = Math.max(1, Math.floor(width / BENCH_SLOT_W));
     // Evenly, as the reactors are: six idle engines are three and three, not five and one.
-    const perRow = Math.ceil(model.bench.length / Math.ceil(model.bench.length / fit));
+    const perRow = Math.ceil(bench.length / Math.ceil(bench.length / fit));
     const slotW = Math.min(BENCH_SLOT_W * 1.5, width / perRow);
     const r = Math.round((density.benchH - 12) / 2);
-    model.bench.forEach((engine, i) => {
+    bench.forEach((engine, i) => {
       const x = (i % perRow) * slotW;
       const top = y + Math.floor(i / perRow) * density.benchH;
       nodes.push({
@@ -305,7 +304,47 @@ function layoutContent(model: FieldModel, width: number, density: Density): { no
         work: null,
       });
     });
-    y += Math.ceil(model.bench.length / perRow) * density.benchH;
+    y += Math.ceil(bench.length / perRow) * density.benchH;
+  }
+
+  return y;
+}
+
+/** The content, laid out at one density, and how tall it came to. */
+function layoutContent(model: FieldModel, width: number, density: Density): { nodes: FieldNode[]; height: number } {
+  const nodes: FieldNode[] = [];
+  let y = 8;
+
+  if (model.vitals.hold !== null) {
+    nodes.push({ kind: 'hold', id: 'hold', rect: rect(0, y, width, HOLD_HEIGHT) });
+    y += HOLD_HEIGHT + density.gap;
+  }
+
+  // ── Burning: a reactor for every engine running an action ────────────────
+  if (model.crews === null) {
+    const engineCount = model.reactors.length + model.bench.length;
+    if (engineCount > 0) {
+      nodes.push({
+        kind: 'header', id: 'header:burning', rect: rect(0, y, width, density.headerH),
+        heads: 'burning', crewId: '', repo: '', count: model.reactors.length, total: engineCount, levels: [], bands: [],
+      });
+      y += density.headerH;
+    }
+    y = layoutPool(nodes, model.reactors, model.bench, width, density, y);
+  } else {
+    // On Shipyard's dashboard: a group for each fleet member, in the order
+    // they joined, so a member's group moves only when the one above it grows
+    // or shrinks. A member with no engine on the field — offline, or not yet
+    // started — keeps its heading, which says so.
+    model.crews.forEach((crew, i) => {
+      if (i > 0) y += density.gap;
+      nodes.push({
+        kind: 'header', id: `header:member:${crew.id}`, rect: rect(0, y, width, density.headerH),
+        heads: 'member', crewId: crew.id, repo: '', count: crew.burning, total: crew.engines, levels: [], bands: [],
+      });
+      y += density.headerH;
+      y = layoutPool(nodes, crew.reactors, crew.bench, width, density, y);
+    });
   }
 
   // ── Below: a group for each project, a line for every piece of work no engine is on ──
@@ -315,7 +354,7 @@ function layoutContent(model: FieldModel, width: number, density: Density): { no
     const bands: Rect[] = [];
     nodes.push({
       kind: 'header', id: `header:project:${repo}`, rect: rect(0, y, width, density.headerH),
-      heads: 'project', repo, count: works.length, total: null, levels: levelCounts(works), bands,
+      heads: 'project', crewId: '', repo, count: works.length, total: null, levels: levelCounts(works), bands,
     });
     y += density.headerH;
     // Every line of a project is the one size — that of the hottest level it
@@ -357,7 +396,7 @@ function layoutContent(model: FieldModel, width: number, density: Density): { no
     y += density.gap;
     nodes.push({
       kind: 'note', id: 'note', rect: rect(0, y, width, 40),
-      text: !model.loaded ? 'Connecting to yoke…' : 'No open issues or pull requests.',
+      text: !model.loaded ? model.notes.loading : model.notes.empty,
     });
     y += 40;
   }
@@ -369,10 +408,12 @@ function layoutHud(model: FieldModel, field: Rect, lampWidth: number): FieldLayo
   const hudRect = rect(field.x, 0, field.w, HUD_HEIGHT);
   // The title keeps this much whatever else is going on at the top.
   const titleReserve = Math.min(340, field.w * 0.42);
-  const wanted = new Set<HudSlotKind>(['usage']);
+  // The fleet's dashboard has no one usage, cycle or countdown to say along
+  // its top: each is a member's own, and is said in that member's heading.
+  const wanted = new Set<HudSlotKind>(model.crews === null ? ['usage'] : []);
   if (model.vitals.connection !== 'connected' || model.vitals.phase !== 'running') wanted.add('state');
-  if (model.vitals.countdown !== null) wanted.add('countdown');
-  if (model.vitals.cycle > 0) wanted.add('cycle');
+  if (model.crews === null && model.vitals.countdown !== null) wanted.add('countdown');
+  if (model.crews === null && model.vitals.cycle > 0) wanted.add('cycle');
 
   let room = field.w - lampWidth - titleReserve;
   const kept = new Map<HudSlotKind, number>();
@@ -453,6 +494,8 @@ export type Hit =
   | { kind: 'work'; key: string; node: WorkNode }
   | { kind: 'engine'; index: number; node: EngineNode }
   | { kind: 'hold' }
+  /** A fleet member's heading, on Shipyard's dashboard. */
+  | { kind: 'crew'; id: string; node: HeaderNode }
   | { kind: 'title' }
   | { kind: 'usage' }
   | { kind: 'ribbon' };
@@ -478,6 +521,7 @@ export function hitTest(layout: FieldLayout, x: number, y: number, scrollY: numb
     if (node.kind === 'work') return { kind: 'work', key: node.work.key, node };
     if (node.kind === 'engine') return { kind: 'engine', index: node.engine.index, node };
     if (node.kind === 'hold') return { kind: 'hold' };
+    if (node.kind === 'header' && node.heads === 'member') return { kind: 'crew', id: node.crewId, node };
   }
   return null;
 }

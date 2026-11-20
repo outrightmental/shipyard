@@ -33,7 +33,7 @@ import { actionVerb, STAGES, type StatusTone, type WorkView } from './work-view.
 export type InboxSource = 'fleet' | 'disk' | 'keep-awake' | 'approval' | 'review' | 'failure';
 
 /** The sources in the order their cards are listed, most pressing first. */
-export const INBOX_SOURCES: readonly InboxSource[] = ['disk', 'keep-awake', 'approval', 'review', 'failure', 'manual', 'fleet'];
+export const INBOX_SOURCES: readonly InboxSource[] = ['disk', 'keep-awake', 'approval', 'review', 'failure', 'fleet'];
 
 /** The one thing a card's big button does. */
 export type InboxAction =

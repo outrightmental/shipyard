@@ -90,7 +90,7 @@ function withFailure(
 // ── the sources ──────────────────────────────────────────────────────────────
 
 test("the inbox lists its sources in one order, the most pressing first", () => {
-  assert.deepEqual([...INBOX_SOURCES], ["disk", "keep-awake", "approval", "review", "failure", "manual", "fleet"]);
+  assert.deepEqual([...INBOX_SOURCES], ["disk", "keep-awake", "approval", "review", "failure", "fleet"]);
 });
 
 test("approval: a PR parked by the review label has a card, and so has every approval under way", () => {
@@ -297,7 +297,7 @@ test("order: by source, most pressing first", () => {
   ];
   const cards = buildInbox(inputFor(state, { keepAwake: "blocked", notices: fleetNotices }));
 
-  assert.deepEqual(cards.map((card) => card.source), ["keep-awake", "approval", "review", "failure", "manual", "fleet", "fleet"]);
+  assert.deepEqual(cards.map((card) => card.source), ["keep-awake", "approval", "review", "failure", "fleet", "fleet"]);
 });
 
 test("order: fleet cards sink below all non-fleet cards; repo-unassigned cards sink below other fleet cards", () => {

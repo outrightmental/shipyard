@@ -9,7 +9,7 @@ import {
   type SubscribedRepo,
 } from '../../shared/protocol.js';
 import type { WireEvent } from '../../shared/replay-cache.js';
-import type { DashboardSource } from '../components/shipyard-dashboard.js';
+import type { DashboardSource } from '../components/shipyard-app.js';
 import { approveKey, type ApproveTarget } from '../shared/pill-approval.js';
 import {
   dashboardReducer,

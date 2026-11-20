@@ -36,11 +36,7 @@ const NO_ANCHORS: ReadonlyMap<string, Point> = new Map();
  * element is the little that joins them: it reads the store, works out what
  * both should show, and carries a press in the inbox back to Shipyard.
  */
-<<<<<<<< HEAD:src/dashboard/components/shipyard-dashboard.ts
-export class ShipyardDashboard extends LitElement {
-========
 export class ShipyardApp extends LitElement {
->>>>>>>> 2ba45e0 (Rename every remaining yoke reference to shipyard (#27)):src/dashboard/components/shipyard-app.ts
   static override properties = {
     store: { attribute: false },
     _state: { attribute: false, state: true },
@@ -255,8 +251,4 @@ export class ShipyardApp extends LitElement {
   }
 }
 
-<<<<<<<< HEAD:src/dashboard/components/shipyard-dashboard.ts
-customElements.define('shipyard-dashboard', ShipyardDashboard);
-========
 customElements.define('shipyard-dashboard', ShipyardApp);
->>>>>>>> 2ba45e0 (Rename every remaining yoke reference to shipyard (#27)):src/dashboard/components/shipyard-app.ts

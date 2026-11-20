@@ -1,7 +1,7 @@
 import { LitElement, html, nothing } from 'lit';
 import { fleetNotices, type FleetNotice } from '../../shared/notices.js';
 import { shortCommit } from '../../shared/release.js';
-import '../components/shipyard-dashboard.js';
+import '../components/shipyard-app.js';
 import type { Api } from './api.js';
 import type { Auth } from './auth.js';
 import './fleet-page.js';

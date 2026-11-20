@@ -244,7 +244,7 @@ test("the keep-awake lamp plays both bundled sources", () => {
 });
 
 test("the Dashboard mounts the keep-awake lamp whenever it is open", async () => {
-  const { ShipyardDashboard } = await import("../src/dashboard/components/shipyard-dashboard.js");
+  const { ShipyardApp: ShipyardDashboard } = await import("../src/dashboard/components/shipyard-app.js");
   const { initialState } = await import("../src/dashboard/store/dashboard-store.js");
   const { flatten } = await import("./dashboard-helpers.js");
 

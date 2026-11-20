@@ -90,7 +90,7 @@ function withFailure(
 // ── the sources ──────────────────────────────────────────────────────────────
 
 test("the inbox lists its sources in one order, the most pressing first", () => {
-  assert.deepEqual([...INBOX_SOURCES], ["disk", "keep-awake", "approval", "review", "failure", "manual", "fleet"]);
+  assert.deepEqual([...INBOX_SOURCES], ["disk", "keep-awake", "approval", "review", "failure", "fleet"]);
 });
 
 test("approval: a PR parked by the review label has a card, and so has every approval under way", () => {
@@ -139,18 +139,6 @@ test("review: a PR Shipyard has asked a person to review on GitHub has a card th
     label: "Review PR #10",
   });
   assert.deepEqual(cards[0]?.links, [{ label: "Issue #1", href: "https://github.com/o/a/issues/1" }], "the button is the link to the PR");
-});
-
-test("manual: a PR labelled manual is listed as a person's to deal with, until it merges", () => {
-  const state = stateWith([
-    ready(1, 10, { disabled: true }),
-    ready(2, 20, { disabled: true, prPhase: "completed" }),
-  ]);
-  const cards = buildInbox(inputFor(state));
-
-  assert.deepEqual(cards.map((card) => card.id), ["manual:o/a#1"]);
-  assert.equal(cards[0]?.eyebrow, "Manual — yours");
-  assert.equal(cards[0]?.action?.type === "open" && cards[0].action.label, "Open PR #10");
 });
 
 test("keep-awake: only a loop the browser refused to start is something to tap", () => {
@@ -298,7 +286,6 @@ test("failure: a usage limit is a hold, not a failure, and lists nothing", () =>
 
 test("order: by source, most pressing first", () => {
   let state = stateWith([
-    ready(5, 50, { disabled: true }),
     ready(4, 40, { awaitingReview: true }),
     ready(3, 30),
     parked(2, 20),
@@ -310,7 +297,7 @@ test("order: by source, most pressing first", () => {
   ];
   const cards = buildInbox(inputFor(state, { keepAwake: "blocked", notices: fleetNotices }));
 
-  assert.deepEqual(cards.map((card) => card.source), ["keep-awake", "approval", "review", "failure", "manual", "fleet", "fleet"]);
+  assert.deepEqual(cards.map((card) => card.source), ["keep-awake", "approval", "review", "failure", "fleet", "fleet"]);
 });
 
 test("order: fleet cards sink below all non-fleet cards; repo-unassigned cards sink below other fleet cards", () => {
@@ -380,7 +367,6 @@ test("order: 'Approval queued' cards pin to the top of the list, above all other
     parked(5, 50),                         // approval idle — 'Approve to merge'
     ready(4, 40, { approval: "approved" }), // approval queued — 'Approval queued'
     ready(3, 30, { awaitingReview: true }), // review
-    ready(2, 20, { disabled: true }),       // manual
   ]);
   state = withFailure(state, { type: "self-review", pullRequestNumber: 30 });
   const cards = buildInbox(inputFor(state, { keepAwake: "blocked" }));
@@ -389,7 +375,7 @@ test("order: 'Approval queued' cards pin to the top of the list, above all other
   assert.equal(cards[0]?.id, "approval:o/a#40");
   assert.deepEqual(
     cards.slice(1).map((c) => c.source),
-    ["keep-awake", "approval", "review", "failure", "manual"],
+    ["keep-awake", "approval", "review", "failure"],
     "all other cards follow in their normal source order",
   );
 });
@@ -620,10 +606,12 @@ test("tethers: each card about a piece of work is joined to it, saying where its
   const model = fieldModel(state, NOW, { cards, selection: { kind: "work", key: "o/a#3" } });
 
   // "Approval queued" (#20) is pinned to the top, so its tether comes first.
+  // The manual PR (#3) has no inbox card, so its selected line goes to the
+  // inspector, which reaches its GitHub link.
   assert.deepEqual(model.tethers, [
     { cardId: "approval:o/a#20", workKey: "o/a#2", state: "sent" },
     { cardId: "approval:o/a#10", workKey: "o/a#1", state: "waiting" },
-    { cardId: "manual:o/a#3", workKey: "o/a#3", state: "waiting" },
+    { cardId: INSPECTOR_CARD_ID, workKey: "o/a#3", state: "selected" },
   ], "the keep-awake card is about no work, and work with a card needs no second line to the inspector");
 
   const picked = fieldModel(state, NOW, { cards: [], selection: { kind: "work", key: "o/a#1" } });

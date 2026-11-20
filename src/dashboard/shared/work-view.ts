@@ -82,15 +82,16 @@ export type StatusTone = 'plain' | 'progress' | 'approved' | 'problem';
  * - `error` (red): something went wrong and nothing has put it right yet —
  *   its last action failed, its checks are failing, or its approval was
  *   refused.
- * - `blocked` (orange): held up by the issues it is blocked by.
+ * - `blocked` (orange): held up by the issues it is blocked by, or labelled
+ *   `manual` — yoke will not move it, so it is blocked on a person.
  * - `review` (yellow): waiting on a person to review or approve it.
  * - `approved` (turquoise): an approval going through — approved, and
  *   waiting for its merge or being merged. Not green, which is the inbox's
  *   for the person's own act: the Approve button, and the point travelling
  *   back along a tether.
  *
- * Everything else — merged, manual, out of the queue, checks running,
- * waiting its turn, shut down — is neutral. A line has at most one signal,
+ * Everything else — merged, out of the queue, checks running, waiting its
+ * turn, shut down — is neutral. A line has at most one signal,
  * which colors its status and the mark at its end alike. The next state to
  * earn a color of its own takes blue, not one of these.
  */
@@ -197,8 +198,8 @@ export function workStatus(params: {
     const brief = approval.line.text.split(/ — |: /)[0] ?? approval.line.text;
     return { text: approval.line.text, tone: approval.line.tone, signal: approvalSignal(approval), brief };
   }
-  // Merged and manual are outcomes nobody has to act on here: neutral.
-  if (pair.disabled) return { text: 'manual — Shipyard leaves it to you', tone: 'plain', signal: null, brief: 'manual' };
+  // Merged is an outcome nobody has to act on; manual is blocked by being manual.
+  if (pair.disabled) return { text: 'manual — yoke leaves it to you', tone: 'plain', signal: 'blocked', brief: 'manual' };
   if (pair.prPhase === 'completed') return { text: 'merged', tone: 'plain', signal: null };
   if (pair.prPhase === 'inactive') return { text: pair.projectStatus || 'out of the queue', tone: 'plain', signal: null };
   if (failure) {

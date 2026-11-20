@@ -26,15 +26,14 @@ import { actionVerb, STAGES, type StatusTone, type WorkView } from './work-view.
  * - `review`: a PR Shipyard has asked a person to review on GitHub (Project SDLC).
  * - `failure`: an action an engine ran that failed, until an engine takes the
  *   work up again or the card is dismissed.
- * - `manual`: a PR labelled `manual`, which Shipyard leaves to a person.
  *
  * A new source is one more function from the dashboard's state to cards, added
  * to `buildInbox`; nothing that draws the inbox has to know of it.
  */
-export type InboxSource = 'fleet' | 'disk' | 'keep-awake' | 'approval' | 'review' | 'failure' | 'manual';
+export type InboxSource = 'fleet' | 'disk' | 'keep-awake' | 'approval' | 'review' | 'failure';
 
 /** The sources in the order their cards are listed, most pressing first. */
-export const INBOX_SOURCES: readonly InboxSource[] = ['disk', 'keep-awake', 'approval', 'review', 'failure', 'manual', 'fleet'];
+export const INBOX_SOURCES: readonly InboxSource[] = ['disk', 'keep-awake', 'approval', 'review', 'failure', 'fleet'];
 
 /** The one thing a card's big button does. */
 export type InboxAction =
@@ -183,36 +182,6 @@ function reviewCards(works: readonly WorkView[]): InboxCard[] {
         href: work.prUrl,
         label: `Review PR #${pr.number}`,
         hint: `Open PR #${pr.number} on GitHub: Shipyard carries on once it is merged, commented on or returned to draft`,
-      },
-      links: workLinks(work).filter((link) => link.href !== work.prUrl),
-      dismissible: false,
-    });
-  }
-  return cards;
-}
-
-/** A card for every PR labelled `manual`, which Shipyard will not touch. */
-function manualCards(works: readonly WorkView[]): InboxCard[] {
-  const cards: InboxCard[] = [];
-  for (const work of works) {
-    const pr = work.pair.pr;
-    if (!pr || !work.prUrl || !work.pair.disabled || work.pair.prPhase === 'completed') continue;
-    cards.push({
-      id: `manual:${work.key}`,
-      source: 'manual',
-      workKey: work.key,
-      color: work.hue,
-      accent: 'work',
-      eyebrow: 'Manual — yours',
-      repo: work.repo,
-      title: pullRequestTitle(work),
-      facts: pullRequestFacts(work),
-      line: null,
-      action: {
-        type: 'open',
-        href: work.prUrl,
-        label: `Open PR #${pr.number}`,
-        hint: `PR #${pr.number} is labelled manual: Shipyard leaves it to you`,
       },
       links: workLinks(work).filter((link) => link.href !== work.prUrl),
       dismissible: false,
@@ -411,7 +380,6 @@ export function buildInbox(input: InboxInput): InboxCard[] {
     ...approvalCards(works),
     ...reviewCards(works),
     ...failureCards(input.failures, works, input.nowMs, input.failureShowMs),
-    ...manualCards(works),
   ]
     .filter((card) => !card.dismissible || !input.dismissed.has(card.id))
     .map((card) => (input.readOnly ? readOnlyCard(card) : card));

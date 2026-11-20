@@ -74,7 +74,7 @@ test("a line of status names the one thing a piece of work is waiting on, and th
     ["parked for approval", prPair(1, 10, { prPhase: "review", approval: "awaiting-approval" }, { draft: false }), "ready — waiting for your approval", "plain", "review"],
     ["parked, checks failing", prPair(1, 10, { prPhase: "review", approval: "awaiting-approval" }, { draft: false, checksStatus: "failure" }), "ready — but its checks are failing", "problem", "error"],
     ["approved", prPair(1, 10, { prPhase: "review", approval: "approved" }, { draft: false }), "approved — waiting for a free engine to squash-merge it", "approved", "approved"],
-    ["manual", prPair(1, 10, { prPhase: "review", disabled: true }, { draft: false }), "manual — Shipyard leaves it to you", "plain", null],
+    ["manual", prPair(1, 10, { prPhase: "review", disabled: true }, { draft: false }), "manual — yoke leaves it to you", "plain", "blocked"],
     ["merged", prPair(1, 10, { prPhase: "completed" }), "merged", "plain", null],
   ];
   for (const [description, pair, text, tone, signal] of cases) {

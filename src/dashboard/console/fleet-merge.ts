@@ -114,6 +114,7 @@ export function sumFleet(input: FleetSum): DashboardState {
       system: state?.system ?? null,
       hold: state?.hold ?? null,
       stopping: state?.shutdownRequested ?? false,
+      stoppingReason: state?.shutdownReason ?? null,
       stopped: state?.appShutdown ?? false,
       repos: member.repos,
       problem: problemOf(member),

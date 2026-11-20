@@ -182,6 +182,17 @@ test("reducer: shutdown-requested sets shutdownRequested flag", () => {
   assert.equal(s.shutdownRequested, true);
 });
 
+test("reducer: shutdown-requested stores the reason when given, and null when not", () => {
+  const noReason = dashboardReducer(initialState(), makeEvent("shutdown-requested", {}));
+  assert.equal(noReason.shutdownReason, null);
+
+  const withReason = dashboardReducer(initialState(), makeEvent("shutdown-requested", { reason: "updating to abc1234" }));
+  assert.equal(withReason.shutdownReason, "updating to abc1234");
+
+  const badReason = dashboardReducer(initialState(), makeEvent("shutdown-requested", { reason: 42 }));
+  assert.equal(badReason.shutdownReason, null, "non-string reason is treated as absent");
+});
+
 test("reducer: app-shutdown sets appShutdown flag", () => {
   const s = dashboardReducer(initialState(), makeEvent("app-shutdown", {}));
   assert.equal(s.appShutdown, true);

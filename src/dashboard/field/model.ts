@@ -5,7 +5,7 @@ import { formatClockTime, formatDuration, formatLogTime } from '../shared/format
 import type { InboxCard, Selection } from '../shared/inbox.js';
 import { systemView, type SystemView } from '../shared/system-view.js';
 import { usageGaugeView, usageLimitUntilMs, type UsageGaugeView } from '../shared/usage-gauge.js';
-import { liveHold, vitals, type Vitals } from '../shared/vitals.js';
+import { liveHold, shutdownNote, vitals, type Vitals } from '../shared/vitals.js';
 import { compareProjectWork, workViews, type WorkView } from '../shared/work-view.js';
 
 /**
@@ -213,7 +213,7 @@ function crewNote(crew: FleetCrew, burning: number, engines: number, nowMs: numb
   }
   if (crew.problem) return { text: crew.problem, tone: 'down' };
   if (crew.stopped) return { text: 'stopped — its service starts it again', tone: 'held' };
-  if (crew.stopping) return { text: 'finishing what is in flight, then restarting', tone: 'held' };
+  if (crew.stopping) return { text: shutdownNote(crew.stoppingReason), tone: 'held' };
   const hold = liveHold(crew.hold, nowMs);
   if (hold) {
     return {

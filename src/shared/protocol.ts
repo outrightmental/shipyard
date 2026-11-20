@@ -158,6 +158,13 @@ export type ConsolePush =
   | { t: "events"; member: string; events: WireEvent[] }
   /** A member started again: what its last process was doing is gone. */
   | { t: "member-reset"; member: string }
+  /**
+   * A member was heard from: its `lastSeenAt` is now `at`. Said as often as
+   * that is written, because nothing else tells an open console so — a member
+   * doing nothing but its work changes nothing about the fleet, and a console
+   * left to its own copy would call it offline a minute after reading it.
+   */
+  | { t: "seen"; member: string; at: string }
   /** The fleet, the repositories or the GitHub connection changed: read /api/state again. */
   | { t: "changed" }
   /** Too much happened to push: read /api/state again. */

@@ -124,6 +124,7 @@ export function initialState(): DashboardState {
     eventCount: 0,
     sessionCount: 0,
     shutdownRequested: false,
+    shutdownReason: null,
     appShutdown: false,
     frozenPillActivity: null,
     hold: null,
@@ -155,7 +156,11 @@ export function dashboardReducer(state: DashboardState, event: DashboardEvent): 
     case 'engine-idle':        return applyEngineIdle(state, event.data);
     case 'engine-shutdown':    return applyEngineShutdown(state, event.data, atMs);
     case 'cylinder-cancel':    return applyCylinderCancel(state, event.data, atMs);
-    case 'shutdown-requested': return addToStream(freezePills({ ...state, shutdownRequested: true }), atMs, '⏹ Shutdown requested — engines will stop after current cycle', -1, 'warning');
+    case 'shutdown-requested': {
+      const shutdownReason = typeof event.data['reason'] === 'string' ? event.data['reason'] : null;
+      const msg = shutdownReason ? `⏹ Shutdown requested — ${shutdownReason}` : '⏹ Shutdown requested — engines will stop after current cycle';
+      return addToStream(freezePills({ ...state, shutdownRequested: true, shutdownReason }), atMs, msg, -1, 'warning');
+    }
     case 'app-shutdown':       return addToStream(freezePills({ ...state, appShutdown: true }), atMs, '⏹ Yoke shutdown complete', -1, 'warning');
     case 'snapshot-update':    return applySnapshotUpdate(state, event.data, atMs);
     case 'lifecycle-update': {

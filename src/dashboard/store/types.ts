@@ -171,6 +171,8 @@ export interface FleetCrew {
   hold: WorkHold | null;
   /** Its process is finishing what is in flight and stopping — to update itself, usually. */
   stopping: boolean;
+  /** Why it is stopping; null when no reason was given (e.g. operator pressed Ctrl-C). */
+  stoppingReason: string | null;
   /** Its process has stopped. */
   stopped: boolean;
   /** The repositories assigned to it, "owner/repo". */
@@ -331,6 +333,8 @@ export interface DashboardState {
   eventCount: number;
   sessionCount: number;
   shutdownRequested: boolean;
+  /** Why the shutdown was requested; null when no reason was given (e.g. operator pressed Ctrl-C). */
+  shutdownReason: string | null;
   appShutdown: boolean;
   /** Each pill's activity, by pill key, as it stood when the pills went dark at
    *  shutdown (issue #268); null while yoke is running. */

@@ -436,6 +436,48 @@ test("a member is seen when it posts, and what it says is wrong with it is kept 
   assert.equal((status.body["member"] as { online: boolean }).online, true);
 });
 
+test("an open console is told each time a member is heard from, without having to read the fleet again", async () => {
+  const t = testPlatform();
+  const atlas = await enrollMachine(t, "atlas");
+  await call(t, "PUT", "/api/repos/acme/widgets", { memberId: atlas.memberId });
+  await connect(t, "console-1", { console: true });
+
+  // Heard from for the first time: that is the fleet changing, and the console reads it again.
+  await call(t, "POST", "/fleet/beat", { boot: "b1" }, { token: atlas.token });
+  assert.ok(pushedTo(t, "console-1").some((message) => message["t"] === "changed"));
+  t.pushed.length = 0;
+
+  // A working member posts every few seconds. When it was last heard from is
+  // written every fifteen at most, and said as often as it is written.
+  t.advance(5_000);
+  await call(t, "POST", "/fleet/beat", { boot: "b1" }, { token: atlas.token });
+  assert.deepEqual(pushedTo(t, "console-1"), []);
+
+  t.advance(10_000);
+  await call(t, "POST", "/fleet/events", { boot: "b1", events: [event("log-message", { message: "working" })] }, { token: atlas.token });
+  const heardAt = new Date(t.nowMs()).toISOString();
+  assert.deepEqual(pushedTo(t, "console-1").map((message) => message["t"]), ["seen", "events"]);
+  assert.deepEqual(pushedTo(t, "console-1")[0], { t: "seen", member: atlas.memberId, at: heardAt });
+  assert.equal((await state(t)).members[0]!.lastSeenAt, heardAt, "what the console is told is what the table holds");
+
+  // An hour of nothing but heartbeats: nothing about the fleet changes, so the
+  // console is never told to read it again, and is told every time all the same.
+  t.pushed.length = 0;
+  for (let beat = 0; beat < 180; beat++) {
+    t.advance(20_000);
+    await call(t, "POST", "/fleet/beat", { boot: "b1" }, { token: atlas.token });
+  }
+  const told = pushedTo(t, "console-1");
+  assert.equal(told.length, 180);
+  assert.ok(told.every((message) => message["t"] === "seen" && message["member"] === atlas.memberId));
+  assert.equal(told.at(-1)!["at"], new Date(t.nowMs()).toISOString());
+
+  // A console whose socket has gone holds no member's post up.
+  t.gone.add("console-1");
+  t.advance(20_000);
+  assert.equal((await call(t, "POST", "/fleet/beat", { boot: "b1" }, { token: atlas.token })).status, 200);
+});
+
 test("a member holding a socket is connected, and is not once it lets go", async () => {
   const t = testPlatform();
   const atlas = await enrollMachine(t, "atlas");

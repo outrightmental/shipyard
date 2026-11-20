@@ -574,6 +574,47 @@ test("when the fleet changes the store reads it again, once, and what happens me
   assert.deepEqual(store.getState().notices.map((notice) => notice.id), ["member-unassigned:m_b"]);
 });
 
+test("a member the platform goes on hearing from stays online in a console that has not read the fleet again", async (t) => {
+  // Read just now, when the member had last been heard from seventy seconds before: five from being called offline.
+  const readAt = Date.now();
+  const atlas = member("m_a", "atlas", ["acme/widgets"], { lastSeenAt: new Date(readAt - 70_000).toISOString(), commit: null });
+  const { store, socket, reads } = await startedStore(t, { members: [atlas], repos: [subscribed("acme/widgets", "m_a")] });
+  const standing = (afterMs: number) => memberStanding(store.view.members[0]!, null, readAt + afterMs).word;
+  assert.equal(standing(0), "online");
+  assert.equal(standing(60_000), "offline", "as it would be called a minute on, were nothing more heard");
+
+  // The platform hears from it, and says so. Nothing about the fleet changed, so nothing is read again.
+  const heardAt = new Date(readAt + 1_000).toISOString();
+  socket.push({ t: "seen", member: "m_a", at: heardAt });
+  assert.equal(store.view.members[0]!.lastSeenAt, heardAt);
+  assert.equal(standing(60_000), "online");
+  assert.equal(store.getState().fleet?.[0]?.online, true);
+  assert.equal(store.getState().fleet?.[0]?.lastSeenAtMs, Date.parse(heardAt));
+  assert.deepEqual(store.getState().notices.map((notice) => notice.id), []);
+  assert.deepEqual(reads, ["GET /state"]);
+
+  // What arrives out of order never takes it back, and what is said of a member it does not know is let go.
+  socket.push({ t: "seen", member: "m_a", at: new Date(readAt - 30_000).toISOString() });
+  socket.push({ t: "seen", member: "m_zz", at: heardAt });
+  socket.push({ t: "seen", member: "m_a", at: "not a time" });
+  assert.equal(store.view.members[0]!.lastSeenAt, heardAt);
+  assert.deepEqual(store.view.members.map((m) => m.id), ["m_a"]);
+});
+
+test("what is heard of a member while the fleet is being read is kept for the reading, not lost under it", async (t) => {
+  const readAt = Date.now();
+  const atlas = member("m_a", "atlas", ["acme/widgets"], { lastSeenAt: new Date(readAt - 20_000).toISOString() });
+  const { store, socket, reads } = await startedStore(t, { members: [atlas], repos: [subscribed("acme/widgets", "m_a")] });
+
+  // The fleet changed; while the console reads it again the member is heard from. The reading is of a moment before.
+  const heardAt = new Date(readAt + 2_000).toISOString();
+  const read = store.refresh();
+  socket.push({ t: "seen", member: "m_a", at: heardAt });
+  await read;
+  assert.deepEqual(reads, ["GET /state", "GET /state"]);
+  assert.equal(store.view.members[0]!.lastSeenAt, heardAt);
+});
+
 // ── The console's own logic ──────────────────────────────────────────────────
 
 test("an address names a page, and anything else is the dashboard", () => {

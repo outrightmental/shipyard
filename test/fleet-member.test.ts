@@ -9,7 +9,7 @@ import { EventEmitter, type DashboardEvent } from "../src/event-emitter.js";
 import { enrollMachine, EnrollRefused, waitUntilOnline } from "../src/fleet/enroll.js";
 import { GitHubTokenKeeper, RENEW_WITH_LESS_THAN_MS } from "../src/fleet/github-token.js";
 import { hostInfo, readEnrollment, readToken } from "../src/fleet/machine.js";
-import { diffRepos, envConfigOf, FleetMember, machineSettings, NOTE_UPDATE, NotEnrolled, type FleetHooks } from "../src/fleet/member.js";
+import { diffRepos, envConfigOf, FleetMember, machineSettings, NOTE_GITHUB, NOTE_UPDATE, NotEnrolled, type FleetHooks } from "../src/fleet/member.js";
 import { installService, launchdPlist, systemdUnit, windowsServiceCommand, windowsServiceScript } from "../src/fleet/service.js";
 import { availableFromVmStat, cpuUse, LoopLag, SystemMonitor, type CoreTimes, type SystemProbe } from "../src/fleet/system-monitor.js";
 import { fastForwardTo, needsUpdate, RESTART_EXIT_CODE, type GitRunner, type UpdateResult } from "../src/fleet/update.js";
@@ -30,6 +30,9 @@ const HOST = hostInfo();
 const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const APP_PEM = privateKey.export({ type: "pkcs1", format: "pem" }).toString();
 
+/** A repository subscribed to by a name it has since been renamed from. */
+const FORMER_NAME = "formerly-widgets";
+
 /** A GitHub with one app, installed on acme: what the platform asks of GitHub, answered. */
 function fakeGithub(minted: Array<{ repositories?: string[] }>): typeof fetch {
   return (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -42,6 +45,10 @@ function fakeGithub(minted: Array<{ repositories?: string[] }>): typeof fetch {
     if (url.includes("/app/installations?")) return answer([{ id: 99, account: { login: "acme" }, repository_selection: "all", html_url: "" }]);
     if (url.endsWith("/app/installations/99/access_tokens")) {
       const body = JSON.parse(typeof init?.body === "string" ? init.body : "{}") as { repositories?: string[] };
+      // A name the repository no longer has is one the installation cannot see: GitHub mints nothing for the lot.
+      if (body.repositories?.includes(FORMER_NAME)) {
+        return answer({ message: "There is at least one repository that does not exist or is not accessible to the parent installation." }, 422);
+      }
       minted.push(body);
       return answer({ token: `ghs_token_${minted.length}`, expires_at: new Date(Date.now() + 3_600_000).toISOString() }, 201);
     }
@@ -588,6 +595,61 @@ test("the GitHub token is renewed before it runs out, and when it does not reach
   fail = false;
   assert.equal(await keeper.ensure(["acme/widgets"]), true);
   assert.equal(problems.at(-1), null);
+});
+
+test("a token that could not be had is no longer a problem once the one in hand reaches all that is assigned", async () => {
+  const now = Date.parse("2026-11-20T05:07:53Z");
+  let asked = 0;
+  let refuse = false;
+  const problems: Array<string | null> = [];
+  const keeper = new GitHubTokenKeeper({
+    now: () => now,
+    onProblem: (problem) => problems.push(problem),
+    mint: async () => {
+      asked += 1;
+      if (refuse) throw new Error("GitHub would not mint a token (422)");
+      return { token: "token-1", expiresAtMs: now + 3_600_000, repos: ["acme/widgets"] };
+    },
+  });
+  assert.equal(await keeper.ensure(["acme/widgets"]), true);
+
+  // One more is assigned, by a name GitHub does not know: no token for the two, and that is said.
+  refuse = true;
+  assert.equal(await keeper.ensure(["acme/widgets", "acme/formerly-widgets"]), false);
+  assert.equal(problems.at(-1), "GitHub would not mint a token (422)");
+  assert.equal(keeper.current(), "token-1", "the one in hand is kept");
+
+  // It is taken away again. Nothing more is asked of GitHub, so no answer of its will say the trouble is over.
+  assert.equal(await keeper.ensure(["acme/widgets"]), true);
+  assert.equal(asked, 2);
+  assert.equal(problems.at(-1), null, "what was said is taken back, not left standing until the next renewal");
+});
+
+test("a member refused a token for a repository says so only for as long as that repository is assigned to it", async (t) => {
+  const h = await harness(t);
+  const enrolled = await enroll(h);
+  const { member, told } = await startMember(t, h);
+  await until("its socket", async () => (await h.state()).members[0]?.connected === true);
+  const notes = async () => (await h.state()).members[0]?.notes ?? [];
+
+  await h.operator("PUT", "/api/repos/acme/widgets", { memberId: enrolled.memberId });
+  await until("it to be told", () => told.length === 1);
+  assert.equal(member.tokens.current(), "ghs_token_1");
+  assert.deepEqual(await notes(), []);
+
+  // Assigned one more, by a name it no longer has: GitHub refuses a token for the two together.
+  await h.operator("PUT", `/api/repos/acme/${FORMER_NAME}`, { memberId: enrolled.memberId });
+  await until("the refusal to be said", async () => (await notes()).length === 1);
+  const [note] = await notes();
+  assert.equal(note?.code, NOTE_GITHUB);
+  assert.match(note?.message ?? "", /^no GitHub token: GitHub would not mint a token \(422\)/);
+  assert.equal(member.tokens.current(), "ghs_token_1", "and goes on working what it could already reach");
+
+  // Taken away again, well inside the hour the token in hand lasts.
+  await h.operator("PUT", `/api/repos/acme/${FORMER_NAME}`, { memberId: null });
+  await until("the note to be taken back", async () => (await notes()).length === 0);
+  assert.equal(member.tokens.current(), "ghs_token_1");
+  assert.deepEqual(h.minted, [{ repositories: ["widgets"] }], "with no token asked for that GitHub could have answered");
 });
 
 test("which repositories changed between two configurations", () => {

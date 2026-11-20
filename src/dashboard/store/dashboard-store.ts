@@ -657,7 +657,7 @@ function applyWorkHold(state: DashboardState, data: Record<string, unknown>, atM
   const untilMs = typeof data['untilMs'] === 'number' ? data['untilMs'] : 0;
   const reason = typeof data['reason'] === 'string' ? data['reason'] : 'a shared limit';
   const kind = typeof data['kind'] === 'string' ? data['kind'] : 'hold';
-  if (untilMs <= Date.now()) return state;
+  if (untilMs <= atMs) return state;
   const hold: WorkHold = { kind, reason, untilMs };
   // A replayed cache event re-states the hold the browser already shows; don't
   // log it twice.
@@ -665,7 +665,7 @@ function applyWorkHold(state: DashboardState, data: Record<string, unknown>, atM
   return addToStream(
     { ...state, hold },
     atMs,
-    `⏸ Waiting ${formatDuration(untilMs - Date.now())} until ${formatClockTime(untilMs)} for ${reason}`,
+    `⏸ Waiting ${formatDuration(untilMs - atMs)} until ${formatClockTime(untilMs)} for ${reason}`,
     -1, 'warning',
   );
 }

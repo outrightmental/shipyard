@@ -85,11 +85,11 @@ An app, rather than someone's token, because its access is exactly the repositor
 **Fleet → Enroll a machine** gives you a code that lasts fifteen minutes and enrolls one machine, once. On the machine — signed in to the Claude account it is to work with (`claude login`), with Node 22 or later and git:
 
 ```bash
-git clone https://github.com/outrightmental/shipyard.git
+git clone https://github.com/outrightmental/shipyard.git shipyard-fleet
 ```
 
 ```bash
-cd shipyard
+cd shipyard-fleet
 ```
 
 ```bash

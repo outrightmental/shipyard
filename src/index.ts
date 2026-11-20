@@ -1777,11 +1777,11 @@ async function main(): Promise<void> {
   // ── A fleet member takes its orders from here on ──────────────────────────
   if (fleet) {
     /** Stop taking work and let what is running finish; the process then exits with `code`. */
-    const windDown = (code: number): void => {
+    const windDown = (code: number, reason?: string): void => {
       fleetExitCode = code;
       if (shutdownSignal.requested) return;
       shutdownSignal.requested = true;
-      emitter.emit("shutdown-requested", {});
+      emitter.emit("shutdown-requested", reason ? { reason } : {});
       poolWake.wake();
     };
     fleet.start({
@@ -1805,11 +1805,11 @@ async function main(): Promise<void> {
       },
       restart(reason: string) {
         setExitReason(`fleet restart: ${reason}`);
-        windDown(RESTART_EXIT_CODE);
+        windDown(RESTART_EXIT_CODE, reason);
       },
       stop(reason: string) {
         setExitReason(`fleet stop: ${reason}`);
-        windDown(0);
+        windDown(0, reason);
       },
     });
   }

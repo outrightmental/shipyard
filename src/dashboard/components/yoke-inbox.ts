@@ -2,7 +2,7 @@ import { LitElement, html } from 'lit';
 import { repeat } from 'lit/directives/repeat.js';
 import type { Point } from '../field/geometry.js';
 import { INSPECTOR_CARD_ID } from '../field/model.js';
-import { cardsToShield, hasNewQueuedApproval, type InboxAction, type InboxCard, type InboxLink, type Inspection } from '../shared/inbox.js';
+import { cardsToShield, hasNewQueuedApproval, queuedApprovalIds, type InboxAction, type InboxCard, type InboxLink, type Inspection } from '../shared/inbox.js';
 import type { ApproveTarget } from '../shared/pill-approval.js';
 
 /**
@@ -56,8 +56,10 @@ export class YokeInbox extends LitElement {
   private _shieldUntil = new Map<string, number>();
   private _anchorsKey = '';
   private _resizeObserver: ResizeObserver | null = null;
-  /** The card ids present in the previous render, for new-pinned-card detection. */
-  private _prevCardIds = new Set<string>();
+  /** The ids of the "Approval queued" cards in the previous render, so a card
+   *  that becomes queued (idle → queued, keeping its id) can be told from one
+   *  that already was and the list scrolled to it only when it is new. */
+  private _prevQueuedIds = new Set<string>();
 
   protected override createRenderRoot() { return this; }
 
@@ -77,8 +79,8 @@ export class YokeInbox extends LitElement {
     this._reportAnchors();
     if (changed.has('selectedCardId') && this.selectedCardId) this._reveal(this.selectedCardId);
     if (changed.has('cards')) {
-      if (!this.readOnly && hasNewQueuedApproval(this._prevCardIds, this.cards)) this._scrollToTop();
-      this._prevCardIds = new Set(this.cards.map((c) => c.id));
+      if (!this.readOnly && hasNewQueuedApproval(this._prevQueuedIds, this.cards)) this._scrollToTop();
+      this._prevQueuedIds = new Set(queuedApprovalIds(this.cards));
     }
   }
 

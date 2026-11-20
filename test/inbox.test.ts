@@ -13,6 +13,7 @@ import {
   InboxLedger,
   inboxWithLedger,
   inspect,
+  queuedApprovalIds,
   type InboxCard,
   type InboxInput,
 } from "../src/dashboard/shared/inbox.js";
@@ -401,50 +402,52 @@ test("order: multiple queued approvals sort among themselves by arrival time, th
 
 // ── scroll-to-top trigger ────────────────────────────────────────────────────
 
-function queuedCard(id: string): InboxCard {
+function approvalCard(pr: number, step: "idle" | "queued"): InboxCard {
   return {
-    id,
+    id: `approval:o/a#${pr}`,
     source: "approval",
     workKey: null,
     color: null,
     accent: "work",
-    eyebrow: "Approval queued",
+    eyebrow: step === "queued" ? "Approval queued" : "Approve to merge",
     repo: "o/a",
     title: "PR",
     facts: [],
     line: null,
-    action: { type: "approve", target: { repo: "o/a", pullRequestNumber: 1 }, step: "queued", label: "Queued", disabled: true, hint: "" },
+    action: { type: "approve", target: { repo: "o/a", pullRequestNumber: pr }, step, label: step === "queued" ? "Queued" : "Approve", disabled: step === "queued", hint: "" },
     links: [],
     dismissible: false,
   };
 }
+const queuedCard = (id: string): InboxCard => approvalCard(Number(id.split("#")[1]), "queued");
 
-test("hasNewQueuedApproval: returns true when a queued approval card is new to the list", () => {
+test("hasNewQueuedApproval: returns true for a queued card whose id was not queued before", () => {
   const prev = new Set(["approval:o/a#50"]);
   assert.equal(hasNewQueuedApproval(prev, [queuedCard("approval:o/a#10")]), true, "new queued card not in prev");
   assert.equal(hasNewQueuedApproval(prev, [queuedCard("approval:o/a#50")]), false, "queued card was already there");
   assert.equal(hasNewQueuedApproval(new Set(), [queuedCard("approval:o/a#10")]), true, "first render with a queued card");
-  assert.equal(hasNewQueuedApproval(new Set(["approval:o/a#10"]), [queuedCard("approval:o/a#10")]), false, "already tracked");
+  assert.equal(hasNewQueuedApproval(new Set(["approval:o/a#10"]), [queuedCard("approval:o/a#10")]), false, "already queued");
+});
+
+test("hasNewQueuedApproval: a card that becomes queued in place (idle → queued) triggers a scroll", () => {
+  // The common path: an approval is idle until a press queues it. Its id never
+  // changes, so tracking which ids were queued — not merely present — is what
+  // catches the press. queuedApprovalIds gives the component what to remember.
+  const before = [approvalCard(10, "idle"), approvalCard(50, "queued")];
+  const prevQueued = new Set(queuedApprovalIds(before));
+  assert.deepEqual([...prevQueued], ["approval:o/a#50"], "only #50 was queued");
+
+  const after = [approvalCard(10, "queued"), approvalCard(50, "queued")];
+  assert.equal(hasNewQueuedApproval(prevQueued, after), true, "#10 just became queued though its id was already shown idle");
+
+  // Nothing new once #10 is remembered as queued.
+  assert.equal(hasNewQueuedApproval(new Set(queuedApprovalIds(after)), after), false, "both already queued");
 });
 
 test("hasNewQueuedApproval: returns false for idle approval or non-approval cards", () => {
-  const idleCard: InboxCard = {
-    id: "approval:o/a#10",
-    source: "approval",
-    workKey: null,
-    color: null,
-    accent: "work",
-    eyebrow: "Approve to merge",
-    repo: "o/a",
-    title: "PR",
-    facts: [],
-    line: null,
-    action: { type: "approve", target: { repo: "o/a", pullRequestNumber: 10 }, step: "idle", label: "Approve", disabled: false, hint: "" },
-    links: [],
-    dismissible: false,
-  };
-  assert.equal(hasNewQueuedApproval(new Set(), [idleCard]), false, "idle approval does not trigger scroll");
+  assert.equal(hasNewQueuedApproval(new Set(), [approvalCard(10, "idle")]), false, "idle approval does not trigger scroll");
   assert.equal(hasNewQueuedApproval(new Set(), []), false, "empty list does not trigger scroll");
+  assert.deepEqual(queuedApprovalIds([approvalCard(10, "idle")]), [], "an idle approval is not a queued id");
 });
 
 // ── never under a finger ─────────────────────────────────────────────────────

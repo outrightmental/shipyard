@@ -294,7 +294,7 @@ test("a pool's own dashboard is drawn as it always was: one heading, one gauge a
 
 // ── The inbox: what the fleet has to say ─────────────────────────────────────
 
-test("what the fleet has to say is first in the inbox, each with a button that goes where it is put right", () => {
+test("what the fleet has to say is in the inbox, each with a button that goes where it is put right", () => {
   const fleet = {
     members: [member("m_a", "atlas", [])],
     repos: [subscribed("acme/orphan", null)],

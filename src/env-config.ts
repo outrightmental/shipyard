@@ -1,6 +1,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { load as loadYaml } from "js-yaml";
+import { DEFAULT_CHECKS_TIMEOUT_MINUTES } from "./orchestrator.js";
 
 export interface GitHubTokenConfig {
   name: string;
@@ -40,6 +41,13 @@ export interface ProjectEnvConfig {
    * removed. Defaults to global checkout_retention_hours.
    */
   checkout_retention_hours?: number;
+  /**
+   * Minutes a pull request's checks may run before the unfinished ones count as
+   * stalled and their workflow runs are cancelled. Defaults to global
+   * checks_timeout_minutes. Set it above the longest `timeout-minutes` of the
+   * repository's PR workflows.
+   */
+  checks_timeout_minutes?: number;
   /** @deprecated Use the top-level `dashboard_port` instead. Honoured only as a fallback. */
   dashboard_port?: number;
   /** Path for persisted agent-session state. Defaults to .shipyard/<owner>-<repo>-sessions.json. */
@@ -75,6 +83,13 @@ export interface EnvConfig {
    * project.
    */
   checkout_retention_hours?: number;
+  /**
+   * Minutes a pull request's checks may run before the unfinished ones count as
+   * stalled and their workflow runs are cancelled (default: 60). Overridable
+   * per project. GitHub already ends a job that outlasts its own
+   * `timeout-minutes`, so keep this at or above the longest one.
+   */
+  checks_timeout_minutes?: number;
   /**
    * Free space, in GB, below which Shipyard evicts idle checkouts least recently
    * used first, and holds new work if that is not enough (default: 10). Global
@@ -152,6 +167,7 @@ export function loadEnvConfig(configPath?: string): EnvConfig {
   }
   assertNonNegativeNumber(filePath, "checkout_retention_hours", config.checkout_retention_hours);
   assertNonNegativeNumber(filePath, "min_free_disk_gb", config.min_free_disk_gb);
+  assertPositiveNumber(filePath, "checks_timeout_minutes", config.checks_timeout_minutes);
   for (let i = 0; i < config.projects.length; i++) {
     const p = config.projects[i] as Record<string, unknown>;
     if (!p || typeof p !== "object") {
@@ -162,6 +178,7 @@ export function loadEnvConfig(configPath?: string): EnvConfig {
       `projects[${i}].checkout_retention_hours`,
       p.checkout_retention_hours,
     );
+    assertPositiveNumber(filePath, `projects[${i}].checks_timeout_minutes`, p.checks_timeout_minutes);
     if ("min_free_disk_gb" in p) {
       throw new Error(
         `${filePath}: "projects[${i}].min_free_disk_gb" is not a per-project key. ` +
@@ -181,6 +198,13 @@ export function loadEnvConfig(configPath?: string): EnvConfig {
   return raw as EnvConfig;
 }
 
+function assertPositiveNumber(filePath: string, key: string, value: unknown): void {
+  if (value === undefined || value === null) return;
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    throw new Error(`${filePath}: "${key}" must be a number greater than 0.`);
+  }
+}
+
 function assertNonNegativeNumber(filePath: string, key: string, value: unknown): void {
   if (value === undefined || value === null) return;
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
@@ -198,6 +222,7 @@ export interface ResolvedProjectDefaults {
   claude_timeout_seconds: number;
   cycle_minimum_seconds: number;
   checkout_retention_hours: number;
+  checks_timeout_minutes: number;
   reviewers: string[];
   focus_mode: boolean;
 }
@@ -267,6 +292,10 @@ export function applyProjectDefaults(
       projectConfig.checkout_retention_hours ??
       globalConfig.checkout_retention_hours ??
       DEFAULT_CHECKOUT_RETENTION_HOURS,
+    checks_timeout_minutes:
+      projectConfig.checks_timeout_minutes ??
+      globalConfig.checks_timeout_minutes ??
+      DEFAULT_CHECKS_TIMEOUT_MINUTES,
     reviewers: projectConfig.reviewers ?? [],
     focus_mode: projectConfig.focus_mode ?? false,
   };

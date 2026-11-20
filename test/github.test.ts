@@ -19,6 +19,7 @@ import {
   SHIPYARD_REVIEW_MARKER,
 } from "../src/github.js";
 import { FileSessionStore } from "../src/session-store.js";
+import { DEFAULT_CHECKS_TIMEOUT_MS } from "../src/orchestrator.js";
 
 function captureStderr(t: test.TestContext): { output: () => string } {
   let stderrOutput = "";
@@ -1462,6 +1463,49 @@ test("cancelStalledWorkflowRunsForPullRequest cancels only this PR's runs that r
   assert.match(listUrl, /head_sha=sha-400/);
   assert.deepEqual(cancelled, [1, 2, 9]);
   assert.equal(count, 3);
+});
+
+test("cancelStalledWorkflowRunsForPullRequest leaves a 20-minute suite alone at the default timeout and cancels a stuck one", async (t) => {
+  const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
+  const run = (id: number, startedMinutesAgo: number) => ({
+    id,
+    status: "in_progress",
+    head_sha: "sha-338",
+    head_branch: "authorless",
+    run_started_at: minutesAgo(startedMinutesAgo),
+    created_at: minutesAgo(startedMinutesAgo),
+    pull_requests: [{ number: 338 }],
+  });
+  const cancelled: number[] = [];
+  const fetchMock = t.mock.method(
+    globalThis,
+    "fetch",
+    async (url: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      const href = String(url);
+      const cancelMatch = /\/actions\/runs\/(\d+)\/cancel$/.exec(href);
+      if (cancelMatch && init?.method === "POST") {
+        cancelled.push(Number(cancelMatch[1]));
+        return new Response(null, { status: 202 });
+      }
+      if (href.includes("/actions/runs?")) {
+        // A Verify suite 20 minutes into its usual 14 to 20, and one hung for three hours.
+        return jsonResponse({ total_count: 2, workflow_runs: [run(1, 20), run(2, 180)] });
+      }
+      throw new Error(`Unexpected fetch call to ${href}`);
+    },
+  );
+  t.after(() => fetchMock.mock.restore());
+
+  const client = new GitHubClient({ owner: "outrightmental", repo: "AscendingLark", token: "token" });
+  const count = await client.cancelStalledWorkflowRunsForPullRequest({
+    pullRequestNumber: 338,
+    headSha: "sha-338",
+    headRefName: "authorless",
+    runningLongerThanMs: DEFAULT_CHECKS_TIMEOUT_MS,
+  });
+
+  assert.deepEqual(cancelled, [2]);
+  assert.equal(count, 1);
 });
 
 test("listFailingCheckRuns tells a stalled check apart from one that is still running", async (t) => {

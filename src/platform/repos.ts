@@ -29,6 +29,10 @@ function cleanSettings(value: unknown): RepoSettings {
     if (reviewers.length > 0) settings.reviewers = reviewers.slice(0, 20);
   }
   if (input["focusMode"] === true) settings.focusMode = true;
+  const checksTimeout = input["checksTimeoutMinutes"];
+  if (typeof checksTimeout === "number" && Number.isInteger(checksTimeout) && checksTimeout >= 1 && checksTimeout <= 1440) {
+    settings.checksTimeoutMinutes = checksTimeout;
+  }
   return settings;
 }
 

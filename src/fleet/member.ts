@@ -72,6 +72,7 @@ export function projectOf(repo: MemberConfig["repos"][number]): ProjectEnvConfig
     ...(repo.githubProjectNumber !== undefined ? { github_project_number: repo.githubProjectNumber } : {}),
     ...(repo.reviewers !== undefined ? { reviewers: repo.reviewers } : {}),
     ...(repo.focusMode !== undefined ? { focus_mode: repo.focusMode } : {}),
+    ...(repo.checksTimeoutMinutes !== undefined ? { checks_timeout_minutes: repo.checksTimeoutMinutes } : {}),
   };
 }
 
@@ -93,7 +94,7 @@ export function envConfigOf(config: MemberConfig, machine: Partial<EnvConfig>): 
 
 /** The settings of a project that, changed, make it a different project to the engine pool. */
 function projectKey(repo: MemberConfig["repos"][number]): string {
-  return JSON.stringify([repo.repo, repo.maxConcurrency ?? null, repo.githubProjectNumber ?? null, repo.reviewers ?? [], repo.focusMode ?? false]);
+  return JSON.stringify([repo.repo, repo.maxConcurrency ?? null, repo.githubProjectNumber ?? null, repo.reviewers ?? [], repo.focusMode ?? false, repo.checksTimeoutMinutes ?? null]);
 }
 
 /** Which repositories were added, taken away, or given other settings between two configurations. */

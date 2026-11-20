@@ -120,7 +120,7 @@ On every iteration, Shipyard:
 2. Builds a dependency-aware work plan from issue age plus relationships like `blocked by #123`, `depends on #123`, and `blocks #123`.
 3. Enforces a configurable concurrency limit so the repo does not get flooded with half-finished work.
 4. For each eligible issue, runs Claude locally in a fresh checkout to implement the change and open a draft pull request.
-5. Checks CI status on every open PR — waits for passing checks before advancing, fixes failing checks, and escalates checks stuck for more than 10 minutes (timed from when the checks started, and only ever cancelling that PR's own stalled runs).
+5. Checks CI status on every open PR — waits for passing checks before advancing, fixes failing checks, and escalates checks stuck for more than 60 minutes, or the repository's `checks_timeout_minutes` (timed from when the checks started, and only ever cancelling that PR's own stalled runs).
 6. Detects merge conflicts and asks Claude to resolve them before continuing.
 7. Asks Claude to self-review the diff and push fixes if needed. Requires two consecutive clean self-reviews before advancing.
 8. Generates a polished final PR description with Claude, updates the PR body, preserves closing references, and squash-merges. Retries with `--admin` if GitHub's branch policy requires it.
@@ -316,6 +316,7 @@ Classic PATs may need `repo`, `project` when using project mode, and `workflow` 
 | `max_concurrency` | `3` | Total size of the shared engine-cylinder pool across all projects. |
 | `cycle_minimum_seconds` | `60` | Minimum seconds between engine cycle starts. |
 | `checkout_retention_hours` | `24` | How long a checkout under `~/.shipyard/checkouts` for an issue or PR that is still open may sit unclaimed and untouched before Shipyard removes it. A checkout whose issue or PR is closed or merged is removed on the next maintenance pass whatever its age. A removed checkout is recreated the next time it is needed; its branch and commits stay in the project's canonical clone. |
+| `checks_timeout_minutes` | `60` | How long a pull request's checks may run before the unfinished ones count as stalled: their workflow runs are cancelled and Claude is asked to look. GitHub already ends a job that outlasts its own `timeout-minutes`, so keep this at or above the longest one in your PR workflows. Overridable per project. |
 | `min_free_disk_gb` | `10` | Free space, in GB, to keep on the filesystem that holds `~/.shipyard/checkouts`. Below it, Shipyard removes idle checkouts least recently used first; if that is still not enough, it starts no new work, and lists a **Disk almost full** card in the inbox, until there is room. Work already under way carries on. Global only. `0` turns it off. |
 | `claude_code_initial_model` | `claude-sonnet-4-6` | Claude model used during initial implementation. |
 | `claude_code_review_model` | `claude-opus-4-8` | Claude model used during self-review. |
@@ -347,6 +348,7 @@ Per-project values override the global ones for that project.
 | `claude_timeout_seconds` | global value | Per-project override of the per-run timeout. |
 | `cycle_minimum_seconds` | global value | Per-project override of the cycle minimum. |
 | `checkout_retention_hours` | global value | Per-project override of how long an idle checkout is kept. |
+| `checks_timeout_minutes` | global value | Per-project override of how long a PR's checks may run before the unfinished ones count as stalled. Set it above the longest `timeout-minutes` of the repository's PR workflows. |
 | `session_store_path` | `<cwd>/.shipyard/<owner>-<repo>-sessions.json` | Path for persisted local agent-session state. |
 
 **CLI flags**

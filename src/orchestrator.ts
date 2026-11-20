@@ -7,8 +7,16 @@ import type {
   RepositorySnapshot,
 } from "./types.js";
 
-/** Maximum time to wait for CI checks to complete before treating them as failed. */
-export const CHECKS_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+/**
+ * How long a PR's checks may run before the still-unfinished ones are treated
+ * as stalled (and their workflow runs cancelled), unless the repository sets
+ * its own `checks_timeout_minutes`. Generous on purpose: a suite that runs for
+ * twenty minutes is working, not stuck, and GitHub already ends any job that
+ * outlasts its own `timeout-minutes`. This catches only what nothing else
+ * does, such as a job with no timeout of its own or a check that never reports.
+ */
+export const DEFAULT_CHECKS_TIMEOUT_MINUTES = 60;
+export const DEFAULT_CHECKS_TIMEOUT_MS = DEFAULT_CHECKS_TIMEOUT_MINUTES * 60 * 1000;
 
 /**
  * Configuration for Human-in-the-Loop project mode.
@@ -431,6 +439,7 @@ function planPullRequestAction(
   projectMode?: ProjectModeConfig,
   issueProjectStatuses?: ReadonlyMap<number, string>,
   reviewGated = false,
+  checksTimeoutMs = DEFAULT_CHECKS_TIMEOUT_MS,
 ): OrchestratorAction | undefined {
   const primaryIssueNumber = issueNumbers[0];
 
@@ -486,7 +495,7 @@ function planPullRequestAction(
       // made freshly started suites look stuck and get cancelled a minute in.
       // A suite that outlasts a poll cycle but not the timeout runs to the end.
       const startedAt = pullRequest.pendingChecksStartedAt;
-      if (startedAt !== undefined && Date.now() - Date.parse(startedAt) > CHECKS_TIMEOUT_MS) {
+      if (startedAt !== undefined && Date.now() - Date.parse(startedAt) > checksTimeoutMs) {
         return withIssueNumber({
           type: "address-failing-checks",
           pullRequestNumber: pullRequest.number,
@@ -697,6 +706,7 @@ export function buildPlan(
   maxConcurrency = 3,
   projectMode?: ProjectModeConfig,
   focusMode = false,
+  checksTimeoutMs = DEFAULT_CHECKS_TIMEOUT_MS,
 ): OrchestratorPlan {
   const issues = sortByCreatedAt(snapshot.issues.filter((issue) => issue.state === "open"));
   const pullRequests = sortByCreatedAt(
@@ -771,6 +781,7 @@ export function buildPlan(
       projectMode,
       issueProjectStatuses,
       isReviewGatedPullRequest(pullRequest),
+      checksTimeoutMs,
     );
     if (action) {
       actions.push(action);

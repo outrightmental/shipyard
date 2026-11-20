@@ -1,6 +1,6 @@
 import {
   buildMergedPullRequestBody,
-  CHECKS_TIMEOUT_MS,
+  DEFAULT_CHECKS_TIMEOUT_MS,
   REVIEW_LABEL,
   reviewApprovalState,
 } from "./orchestrator.js";
@@ -172,6 +172,12 @@ export interface ExecuteActionContext {
     projectNumber: number;
     reviewers: string[];
   };
+  /**
+   * How long this repository's checks may run before the unfinished ones count
+   * as stalled and their workflow runs are cancelled. The planner uses the same
+   * limit to decide that checks are stuck. Defaults to DEFAULT_CHECKS_TIMEOUT_MS.
+   */
+  checksTimeoutMs?: number;
 }
 
 function findIssue(context: ExecuteActionContext, issueNumber: number): Issue {
@@ -558,6 +564,7 @@ export async function executeAction(
 
     case "address-failing-checks": {
       const pullRequest = findPullRequest(context, action.pullRequestNumber);
+      const checksTimeoutMs = context.checksTimeoutMs ?? DEFAULT_CHECKS_TIMEOUT_MS;
       // Cancel this PR's stalled runs — still incomplete past the timeout —
       // so Claude doesn't try to diagnose a job that is never going to finish.
       // A run still inside the timeout is left alone: it is progressing, and a
@@ -567,7 +574,7 @@ export async function executeAction(
         pullRequestNumber: pullRequest.number,
         headSha: pullRequest.headSha,
         headRefName: pullRequest.headRefName,
-        runningLongerThanMs: CHECKS_TIMEOUT_MS,
+        runningLongerThanMs: checksTimeoutMs,
       });
       if (cancelledCount > 0) {
         const startedAt = pullRequest.pendingChecksStartedAt;
@@ -581,7 +588,7 @@ export async function executeAction(
                 return m > 0 ? `${m}m ${s}s` : `${s}s`;
               })()
             : "unknown duration";
-        const thresholdMin = Math.round(CHECKS_TIMEOUT_MS / 60_000);
+        const thresholdMin = Math.round(checksTimeoutMs / 60_000);
         console.log(
           `[shipyard] Cancelled ${cancelledCount} stalled workflow run(s) for PR #${pullRequest.number}: ` +
           `still running more than ${thresholdMin} minutes after they started ` +
@@ -592,7 +599,7 @@ export async function executeAction(
         gitHubClient.listFailingCheckRuns({
           pullRequestNumber: pullRequest.number,
           headSha: pullRequest.headSha,
-          stalledAfterMs: CHECKS_TIMEOUT_MS,
+          stalledAfterMs: checksTimeoutMs,
         }),
         fetchHumanComments(gitHubClient, sessionStore, pullRequest.number),
       ]);

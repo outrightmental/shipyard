@@ -573,3 +573,29 @@ test("applyProjectDefaults defaults reviewers to empty array", () => {
   const result = applyProjectDefaults({ github_repository: "o/r" }, baseEnvConfig);
   assert.deepEqual(result.reviewers, []);
 });
+
+test("applyProjectDefaults gives checks 60 minutes unless the project or the config says otherwise", () => {
+  assert.equal(applyProjectDefaults({ github_repository: "o/r" }, baseEnvConfig).checks_timeout_minutes, 60);
+  assert.equal(
+    applyProjectDefaults({ github_repository: "o/r" }, { ...baseEnvConfig, checks_timeout_minutes: 45 })
+      .checks_timeout_minutes,
+    45,
+  );
+  assert.equal(
+    applyProjectDefaults(
+      { github_repository: "o/r", checks_timeout_minutes: 90 },
+      { ...baseEnvConfig, checks_timeout_minutes: 45 },
+    ).checks_timeout_minutes,
+    90,
+  );
+});
+
+test("loadEnvConfig refuses a checks_timeout_minutes that is not above 0", async () => {
+  await withTempDir(async (dir) => {
+    const filePath = await writeEnvYaml(dir, {
+      ...minimalValidConfig,
+      projects: [{ github_repository: "owner/repo", checks_timeout_minutes: 0 }],
+    });
+    assert.throws(() => loadEnvConfig(filePath), /checks_timeout_minutes" must be a number greater than 0/);
+  });
+});

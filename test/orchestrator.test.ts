@@ -5,6 +5,7 @@ import {
   buildMergedPullRequestBody,
   buildBlockedIssueIndex,
   buildPlan,
+  DEFAULT_CHECKS_TIMEOUT_MINUTES,
   findDependencyCycles,
   parseBlockedIssueRelationships,
   parseBlockingRelationships,
@@ -590,7 +591,7 @@ test("buildPlan lets two PRs' checks keep running when they outlast a poll cycle
 
 test("buildPlan escalates only the PR whose own checks are stuck, not its sibling's", () => {
   const snapshot = siblingPullRequestSnapshot(
-    { checksStatus: "pending", pendingChecksStartedAt: minutesAgo(15) },
+    { checksStatus: "pending", pendingChecksStartedAt: minutesAgo(75) },
     { checksStatus: "pending", pendingChecksStartedAt: minutesAgo(2) },
   );
 
@@ -621,14 +622,15 @@ test("buildPlan addresses one PR's failing checks without touching a sibling who
 });
 
 test("buildPlan applies the stuck-checks timeout to the time the checks started", () => {
-  // A suite that started 9 minutes ago is inside the 10-minute timeout; one
-  // that started 11 minutes ago is past it.
+  // A suite that started 59 minutes ago is inside the 60-minute timeout; one
+  // that started 61 minutes ago is past it.
+  assert.equal(DEFAULT_CHECKS_TIMEOUT_MINUTES, 60);
   const withinTimeout = siblingPullRequestSnapshot(
-    { checksStatus: "pending", pendingChecksStartedAt: minutesAgo(9) },
+    { checksStatus: "pending", pendingChecksStartedAt: minutesAgo(59) },
     { checksStatus: "success" },
   );
   const pastTimeout = siblingPullRequestSnapshot(
-    { checksStatus: "pending", pendingChecksStartedAt: minutesAgo(11) },
+    { checksStatus: "pending", pendingChecksStartedAt: minutesAgo(61) },
     { checksStatus: "success" },
   );
 
@@ -644,6 +646,48 @@ test("buildPlan applies the stuck-checks timeout to the time the checks started"
   // The sibling with passing checks goes on to self-review either way.
   assert.deepEqual(actionTypesFor(withinTimeout, 501), ["self-review"]);
   assert.deepEqual(actionTypesFor(pastTimeout, 501), ["self-review"]);
+});
+
+test("buildPlan leaves a 20-minute suite running instead of treating it as stuck", () => {
+  // Ascending Lark's required Verify check runs 14 to 20 minutes. Twenty
+  // minutes in it is working, not stalled: nothing may cancel it.
+  const snapshot = siblingPullRequestSnapshot(
+    { checksStatus: "pending", pendingChecksStartedAt: minutesAgo(20) },
+    { checksStatus: "pending", pendingChecksStartedAt: minutesAgo(14) },
+  );
+
+  assert.deepEqual(buildPlan(snapshot, 3).actions, []);
+});
+
+test("buildPlan still treats a suite stuck past the timeout as failing", () => {
+  const snapshot = siblingPullRequestSnapshot(
+    { checksStatus: "pending", pendingChecksStartedAt: minutesAgo(3 * 60) },
+    { checksStatus: "pending", pendingChecksStartedAt: minutesAgo(20) },
+  );
+
+  assert.deepEqual(buildPlan(snapshot, 3).actions, [
+    {
+      type: "address-failing-checks",
+      issueNumber: 400,
+      pullRequestNumber: 500,
+      pullRequestHeadSha: "sha-500",
+    },
+  ]);
+});
+
+test("buildPlan applies a repository's own checks timeout", () => {
+  const snapshot = siblingPullRequestSnapshot(
+    { checksStatus: "pending", pendingChecksStartedAt: minutesAgo(80) },
+    { checksStatus: "pending", pendingChecksStartedAt: minutesAgo(20) },
+  );
+  const stuckIn = (timeoutMinutes: number) =>
+    buildPlan(snapshot, 3, undefined, false, timeoutMinutes * 60_000)
+      .actions.flatMap((action) => (action.type === "address-failing-checks" ? [action.pullRequestNumber] : []));
+
+  // A repository whose suites may run 90 minutes leaves both running.
+  assert.deepEqual(stuckIn(90), []);
+  // One that set 15 minutes treats both as stuck.
+  assert.deepEqual(stuckIn(15), [500, 501]);
 });
 
 test("buildPlan emits no action after squash-merge session has completed", () => {

@@ -80,6 +80,8 @@ export interface RepoSettings {
   reviewers?: string[];
   /** Only issues labelled "focus" are picked up. */
   focusMode?: boolean;
+  /** Minutes a PR's checks may run before the unfinished ones count as stalled and are cancelled (default 60). */
+  checksTimeoutMinutes?: number;
 }
 
 /** A repository Shipyard is subscribed to. */

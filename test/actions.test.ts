@@ -445,8 +445,8 @@ test("executeAction passes failing check logs to Claude", async () => {
   });
 
   assert.deepEqual(harness.calls, [
-    "cancel-stalled:13:sha-13:branch-13:600000ms",
-    "list-failing:13:sha-13:stalled-after=600000ms",
+    "cancel-stalled:13:sha-13:branch-13:3600000ms",
+    "list-failing:13:sha-13:stalled-after=3600000ms",
     "address-checks:13:2-checks",
     "post-comment:13:Addressed failing CI checks and pushed a fix (lint, test).",
   ]);
@@ -494,7 +494,7 @@ test("executeAction address-failing-checks on one PR never reaches another PR's 
   });
 
   const cancelCalls = harness.calls.filter((call) => call.startsWith("cancel-"));
-  assert.deepEqual(cancelCalls, ["cancel-stalled:400:sha-400:shipyard/issue-300:600000ms"]);
+  assert.deepEqual(cancelCalls, ["cancel-stalled:400:sha-400:shipyard/issue-300:3600000ms"]);
   assert.ok(
     harness.calls.every((call) => !call.includes("401") && !call.includes("issue-301")),
     `no call touched PR #401: ${JSON.stringify(harness.calls)}`,
@@ -510,7 +510,7 @@ test("executeAction logs a cancel of stalled runs as stalled, not as a pending-s
     number: 13,
     linkedIssueNumbers: [10],
     checksStatus: "pending",
-    pendingChecksStartedAt: new Date(Date.now() - 12 * 60_000).toISOString(),
+    pendingChecksStartedAt: new Date(Date.now() - 65 * 60_000).toISOString(),
     headSha: "sha-13",
   });
   const harness = createHarness({ pullRequests: [pullRequest], cancelledRunCount: 2 });
@@ -525,8 +525,34 @@ test("executeAction logs a cancel of stalled runs as stalled, not as a pending-s
   const cancelLog = logged.find((line) => line.includes("Cancelled"));
   assert.ok(cancelLog, `expected a cancel log line, got ${JSON.stringify(logged)}`);
   assert.match(cancelLog, /Cancelled 2 stalled workflow run\(s\) for PR #13/);
-  assert.match(cancelLog, /more than 10 minutes after they started/);
-  assert.match(cancelLog, /oldest incomplete check started 12m \d+s ago/);
+  assert.match(cancelLog, /more than 60 minutes after they started/);
+  assert.match(cancelLog, /oldest incomplete check started 65m \d+s ago/);
+});
+
+test("executeAction cancels and reports stalled runs by the repository's own checks timeout", async () => {
+  const pullRequest = createPullRequest({
+    number: 13,
+    linkedIssueNumbers: [10],
+    checksStatus: "failure",
+    headSha: "sha-13",
+  });
+  const harness = createHarness({
+    pullRequests: [pullRequest],
+    failingCheckRuns: [{ name: "Verify", logExcerpt: "1 failing test" }],
+  });
+  harness.context = { ...harness.context, checksTimeoutMs: 90 * 60_000 };
+
+  await run(harness, {
+    type: "address-failing-checks",
+    issueNumber: 10,
+    pullRequestNumber: 13,
+    pullRequestHeadSha: "sha-13",
+  });
+
+  assert.deepEqual(harness.calls.slice(0, 2), [
+    "cancel-stalled:13:sha-13:branch-13:5400000ms",
+    "list-failing:13:sha-13:stalled-after=5400000ms",
+  ]);
 });
 
 test("executeAction logs no cancel when no run on the PR had stalled", async (t) => {

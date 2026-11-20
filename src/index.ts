@@ -390,6 +390,7 @@ async function broadcastBetweenCycleActivity(
       ctx.cap,
       config.projectMode,
       config.focusMode,
+      config.checksTimeoutMs,
     );
     reportDependencyCycles(repoKey, dependencyCycles, emitter);
     broadcastLifecycleUpdate(
@@ -527,6 +528,8 @@ interface Config {
   projectMode: ProjectModeConfig | undefined;
   /** Focus mode: when true, only issues labelled "focus" are picked up. */
   focusMode: boolean;
+  /** How long a PR's checks may run before the unfinished ones count as stalled. */
+  checksTimeoutMs: number;
 }
 
 function parseRepositorySlug(repository: string): { owner: string; repo: string } {
@@ -587,6 +590,7 @@ function buildProjectConfig(
     sessionStorePath,
     projectMode,
     focusMode: resolved.focus_mode,
+    checksTimeoutMs: Math.round(resolved.checks_timeout_minutes * 60_000),
   };
 }
 
@@ -685,7 +689,7 @@ async function runProjectMaintenance(
     broadcastPullRequestUpdate(pr, `tracking ${draftLabel} ${checksLabel}`, undefined, emitter, repoKey);
   }
 
-  const plan = buildPlan(snapshot, ctx.cap, config.projectMode, config.focusMode);
+  const plan = buildPlan(snapshot, ctx.cap, config.projectMode, config.focusMode, config.checksTimeoutMs);
   reportDependencyCycles(repoKey, plan.dependencyCycles, emitter);
   broadcastLifecycleUpdate(
     snapshot,
@@ -849,7 +853,7 @@ function approveFromDashboard(
       return decision;
     },
     announce: async (snapshot, checksPending) => {
-      const plan = buildPlan(snapshot, ctx.cap, config.projectMode, config.focusMode);
+      const plan = buildPlan(snapshot, ctx.cap, config.projectMode, config.focusMode, config.checksTimeoutMs);
       broadcastLifecycleUpdate(
         snapshot,
         claimedImplementationIssueNumbers(pool.claimedActions, repoKey),
@@ -903,7 +907,7 @@ async function planNextAction(
       } catch {
         return undefined;
       }
-      return { snapshot, ...buildPlan(snapshot, ctx.cap, ctx.config.projectMode, ctx.config.focusMode) };
+      return { snapshot, ...buildPlan(snapshot, ctx.cap, ctx.config.projectMode, ctx.config.focusMode, ctx.config.checksTimeoutMs) };
     },
     // Refresh this project's lifecycle pane on every planning pass so pills
     // reflect the freshest snapshot (and any claim we just made).
@@ -1247,6 +1251,7 @@ async function runEngine(
           issues: snapshot.issues,
           pullRequests: snapshot.pullRequests,
           ...(config.projectMode ? { projectMode: config.projectMode } : {}),
+          checksTimeoutMs: config.checksTimeoutMs,
         };
 
         try {

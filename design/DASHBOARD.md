@@ -76,12 +76,12 @@ A line has at most one signal, worked out with its status in `workStatus`, so th
 | Signal | Colour | When |
 | --- | --- | --- |
 | `error` | red, `--color-red` | its last action failed and no engine has taken it up again (`WorkView.failure`: until an engine takes it up again, or for 90 minutes, `FAILURE_SHOW_MS` — dismissing its inbox card does not clear it, since nothing has answered the error yet); its checks are failing; its approval was refused or failed |
-| `blocked` | orange, `--color-orange` | it is blocked by other issues — a hold, like a usage limit or a shutdown, which are orange too |
+| `blocked` | orange, `--color-orange` | it is blocked by other issues, or labelled `manual` — yoke will not move it, so it is blocked on a person — a hold, like a usage limit or a shutdown, which are orange too |
 | `review` | yellow, `--color-yellow` | it waits on a person: ready for review, or parked for an approval Yoke is asking for |
 | `approved` | turquoise, `--color-turquoise` | an approval going through: approved, and waiting for or undergoing its merge |
-| none | gray | merged; `manual`; out of the queue; checks running; waiting for an engine; implementing; an approval sent and not yet answered; shut down |
+| none | gray | merged; out of the queue; checks running; waiting for an engine; implementing; an approval sent and not yet answered; shut down |
 
-Red for an error, orange for a block and yellow for a PR awaiting review are the three the issue asked for (#286): the states the field most needs to be seen. Merged and manual are outcomes nobody has to act on here, so they stay neutral, as the issue asked too. Every further state was to take blue or turquoise next, and an approval going through is one: an approved PR waiting for its merge is worth a glance — your press took, and the merge is coming — but it is not merged yet, and is not an alarm.
+Red for an error, orange for a block and yellow for a PR awaiting review are the three the issue asked for (#286): the states the field most needs to be seen. A merged PR is an outcome nobody has to act on here, so it stays neutral, as the issue asked too; a `manual` PR, though, is blocked on a person and so takes orange like any other block (#21), no longer listed in the inbox. Every further state was to take blue or turquoise next, and an approval going through is one: an approved PR waiting for its merge is worth a glance — your press took, and the merge is coming — but it is not merged yet, and is not an alarm.
 
 So it takes turquoise, a token of its own (`--color-turquoise`), and not the green the dashboard used for it before. Why turquoise, and why not green:
 
@@ -185,7 +185,6 @@ With nothing in it the inbox folds to a strip and gives its room to the field (`
 | `approval` | a PR parked by the `review` label, and every approval under way | Approve |
 | `review` | a PR Yoke has asked a person to review on GitHub (Project SDLC) | opens it |
 | `failure` | an action that failed and has not been taken up again | none; it can be dismissed |
-| `manual` | a PR labelled `manual` | opens it |
 | `fleet` (non-`repo-unassigned`) | a fleet notice: no GitHub connection, no active members, a member offline or with a note | goes to the console page where it is put right |
 | `fleet` (`repo-unassigned`) | a subscribed repository with no member assigned | goes to the console page where it is put right |
 

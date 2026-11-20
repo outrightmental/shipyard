@@ -199,4 +199,4 @@ npm run demo:dashboard
 
 **The engine by hand**, on one machine from an `env.yaml`, still works exactly as [its README](design/ENGINE.md) says: `npm run dev`.
 
-The engine under `src/*.ts` is kept close to the `shipyard` upstream remote on purpose, so its improvements still merge.
+The engine under `src/*.ts` is kept close to its `upstream` remote on purpose, so its improvements still merge.

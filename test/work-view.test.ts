@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { engineView, engineViews } from "../src/dashboard/shared/engine-view.js";
 import { issueColor, NEUTRAL_COLOR } from "../src/dashboard/shared/issue-colors.js";
 import { burnColor, DIMMED_OPACITY } from "../src/dashboard/shared/burn-level.js";
-import { liveHold, vitals } from "../src/dashboard/shared/vitals.js";
+import { liveHold, shutdownHudLabel, shutdownNote, vitals } from "../src/dashboard/shared/vitals.js";
 import {
   actionTarget,
   actionVerb,
@@ -460,4 +460,28 @@ test("vitals: the subtitle is the one project's name, or how many share the dash
 test("vitals: shutting down, then shut down", () => {
   assert.equal(vitals({ ...initialState(), shutdownRequested: true }, NOW).phase, "shutting-down");
   assert.equal(vitals({ ...initialState(), shutdownRequested: true, appShutdown: true }, NOW).phase, "shut-down");
+});
+
+test("vitals: shutdownReason is null when no reason was given, and carried through when one was", () => {
+  assert.equal(vitals({ ...initialState(), shutdownRequested: true, shutdownReason: null }, NOW).shutdownReason, null);
+  assert.equal(vitals({ ...initialState(), shutdownRequested: true, shutdownReason: "updating to abc1234" }, NOW).shutdownReason, "updating to abc1234");
+});
+
+test("shutdownHudLabel: maps each known reason to its short label, and falls back to STOPPING", () => {
+  assert.equal(shutdownHudLabel(null), "STOPPING", "no reason: operator Ctrl-C");
+  assert.equal(shutdownHudLabel("updating to abc1234"), "UPDATING abc1234");
+  assert.equal(shutdownHudLabel("updating to def5678"), "UPDATING def5678");
+  assert.equal(shutdownHudLabel("its engine pool was resized"), "RESTARTING");
+  assert.equal(shutdownHudLabel("an operator retired this machine from the fleet"), "RETIRING");
+  assert.equal(shutdownHudLabel("Shipyard no longer takes this machine's token (...)"), "UNENROLLED");
+  assert.equal(shutdownHudLabel("some unknown reason"), "STOPPING", "unrecognised reason falls back");
+});
+
+test("shutdownNote: maps each known reason to a full sentence, and falls back to a generic one", () => {
+  assert.equal(shutdownNote(null), "finishing what is in flight, then stopping");
+  assert.equal(shutdownNote("updating to abc1234"), "finishing what is in flight, then updating to abc1234");
+  assert.equal(shutdownNote("its engine pool was resized"), "finishing what is in flight, then restarting — engine pool resized");
+  assert.equal(shutdownNote("an operator retired this machine from the fleet"), "finishing what is in flight, then stopping — retired by an operator");
+  assert.equal(shutdownNote("Shipyard no longer takes this machine's token (...)"), "finishing what is in flight, then stopping — Shipyard no longer takes its token");
+  assert.equal(shutdownNote("unexpected reason"), "finishing what is in flight, then stopping — unexpected reason");
 });

@@ -261,6 +261,43 @@ test("a member's heading says what is holding it up in orange, and that it is no
   assert.deepEqual(fieldModel(idle, NOW).crews?.map((crew) => [crew.note.text, crew.note.tone]), [["assigned no repositories", "held"]]);
 });
 
+test("a stopping member's heading says why it is stopping, using the reason from its shutdown-requested event", () => {
+  const makeStoppingState = (reason?: string) => {
+    let state = memberState("acme/widgets", 2, { burning: false });
+    state = dashboardReducer(state, stamped("shutdown-requested", reason ? { reason } : {}));
+    return state;
+  };
+
+  // No reason (operator Ctrl-C) → generic note.
+  const noReason = sumFleet({
+    fleet: { members: [member("m_a", "atlas", ["acme/widgets"])], repos: [], github: GITHUB },
+    states: new Map([["m_a", makeStoppingState()]]),
+    connection: "connected", nowMs: NOW,
+  });
+  const [noReasonCrew] = fieldModel(noReason, NOW).crews!;
+  assert.equal(noReasonCrew!.note.tone, "held");
+  assert.equal(noReasonCrew!.note.text, "finishing what is in flight, then stopping");
+
+  // Self-upgrade → mentions the target commit.
+  const updating = sumFleet({
+    fleet: { members: [member("m_a", "atlas", ["acme/widgets"])], repos: [], github: GITHUB },
+    states: new Map([["m_a", makeStoppingState("updating to abc1234")]]),
+    connection: "connected", nowMs: NOW,
+  });
+  const [updatingCrew] = fieldModel(updating, NOW).crews!;
+  assert.equal(updatingCrew!.note.tone, "held");
+  assert.equal(updatingCrew!.note.text, "finishing what is in flight, then updating to abc1234");
+
+  // Pool resize → mentions the restart.
+  const resized = sumFleet({
+    fleet: { members: [member("m_a", "atlas", ["acme/widgets"])], repos: [], github: GITHUB },
+    states: new Map([["m_a", makeStoppingState("its engine pool was resized")]]),
+    connection: "connected", nowMs: NOW,
+  });
+  const [resizedCrew] = fieldModel(resized, NOW).crews!;
+  assert.equal(resizedCrew!.note.text, "finishing what is in flight, then restarting — engine pool resized");
+});
+
 test("a member's heading can be picked out, and says more about the member", () => {
   const { sum } = twoMembers();
   const model = fieldModel(sum, NOW);

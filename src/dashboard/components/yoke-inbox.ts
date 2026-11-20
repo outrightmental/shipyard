@@ -104,10 +104,22 @@ export class YokeInbox extends LitElement {
   /** Scroll the list to the top so a newly pinned card is immediately visible.
    *  Only the list scrolls — the page itself must never move. The jump is
    *  instant, not animated (#18): a card one press away from merging a pull
-   *  request must be under the eye at once, not slid up to over a moment. */
+   *  request must be under the eye at once, not slid up to over a moment.
+   *
+   *  The jump slides every card under wherever a finger already was. The move
+   *  shield keys off layout position, which a scroll leaves unchanged, so it
+   *  does not catch this on its own — a card that merely stayed put while the
+   *  list scrolled is not seen as having moved. Shield the whole list for a
+   *  moment so no button a scroll has just slid under a finger takes that press
+   *  (#278, #18). */
   private _scrollToTop() {
     const list = this.querySelector<HTMLElement>('.inbox-list');
-    if (list && list.scrollTop > 0) list.scrollTo({ top: 0, behavior: 'instant' });
+    if (!list || list.scrollTop <= 0) return;
+    list.scrollTo({ top: 0, behavior: 'instant' });
+    const until = performance.now() + TAP_SHIELD_MS;
+    for (const element of list.querySelectorAll<HTMLElement>('[data-card]')) {
+      this._shieldUntil.set(element.dataset['card']!, until);
+    }
   }
 
   /** Make the button of every card that has just arrived or moved deaf for a moment. */

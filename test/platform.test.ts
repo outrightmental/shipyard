@@ -262,7 +262,7 @@ test("per-repository model and effort overrides flow through to member config", 
   // Invalid effort or model are silently dropped.
   const ignored = await call(t, "PUT", "/api/repos/acme/widgets", { settings: { initialModel: "not-claude", reviewEffort: "ultra" } });
   assert.equal(ignored.status, 200);
-  assert.deepEqual(ignored.body["repo"]["settings"], {}, "invalid overrides are dropped");
+  assert.deepEqual((ignored.body["repo"] as Record<string, unknown>)["settings"], {}, "invalid overrides are dropped");
 });
 
 // ── Repositories ─────────────────────────────────────────────────────────────

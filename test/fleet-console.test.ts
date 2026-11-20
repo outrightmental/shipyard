@@ -476,7 +476,7 @@ async function startedStore(t: { after: (fn: () => void) => void }, state: Parti
   const reads: string[] = [];
   let answer: ConsoleState = {
     release: null, serverTimeMs: Date.now(), operator: { email: "operator@example.com" },
-    members: [], repos: [], github: GITHUB, cached: {}, ...state,
+    members: [], repos: [], github: GITHUB, engineDefaults: {}, cached: {}, ...state,
   };
   const api = {
     get: async (path: string) => { reads.push(`GET ${path}`); return { ok: true, ...answer }; },

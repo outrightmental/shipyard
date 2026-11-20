@@ -180,10 +180,14 @@ With nothing in it the inbox folds to a strip and gives its room to the field (`
 
 | Source | A card for | Its button |
 | --- | --- | --- |
+| `disk` | the disk too full to start new work | none |
 | `keep-awake` | a keep-awake loop the browser refused to autoplay | starts it |
 | `approval` | a PR parked by the `review` label, and every approval under way | Approve |
 | `review` | a PR Yoke has asked a person to review on GitHub (Project SDLC) | opens it |
 | `failure` | an action that failed and has not been taken up again | none; it can be dismissed |
+| `manual` | a PR labelled `manual` | opens it |
+| `fleet` (non-`repo-unassigned`) | a fleet notice: no GitHub connection, no active members, a member offline or with a note | goes to the console page where it is put right |
+| `fleet` (`repo-unassigned`) | a subscribed repository with no member assigned | goes to the console page where it is put right |
 
 Every card has the same shape (`InboxCard`), and `<yoke-inbox>` only draws cards. **To add an interaction, write one more function that returns cards and add it to `buildInbox`**; nothing that draws the inbox needs to know of it. If its button does something new, add a variant to `InboxAction` and one `case` to the element.
 

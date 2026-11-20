@@ -951,6 +951,10 @@ test("a member's standing is said in a word, by the platform's clock", () => {
 test("a machine is told what to run with the code it was given", () => {
   assert.deepEqual(enrollCommands("enr_abc").at(-1), "npm run enroll -- --code enr_abc");
   assert.ok(enrollCommands("enr_abc")[0]!.includes("github.com/outrightmental/shipyard"));
+  assert.deepEqual(enrollCommands("enr_abc").slice(0, 2), [
+    "git clone https://github.com/outrightmental/shipyard.git shipyard-fleet",
+    "cd shipyard-fleet",
+  ]);
 });
 
 test("config.json is taken as it is written, and one that names no sign-in is refused", () => {

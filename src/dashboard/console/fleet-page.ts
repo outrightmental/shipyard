@@ -12,8 +12,8 @@ import { icons } from './icons.js';
 /** What a machine is told to run to join, with the code it was just given. */
 export function enrollCommands(code: string): string[] {
   return [
-    'git clone https://github.com/outrightmental/shipyard.git',
-    'cd shipyard',
+    'git clone https://github.com/outrightmental/shipyard.git shipyard-fleet',
+    'cd shipyard-fleet',
     'npm ci',
     `npm run enroll -- --code ${code}`,
   ];

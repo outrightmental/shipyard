@@ -18,6 +18,32 @@ export interface HoldView {
 export type RunPhase = 'running' | 'shutting-down' | 'shut-down';
 
 /**
+ * The HUD state slot value shown while a pool is shutting down, derived from
+ * the reason it was asked to stop.
+ */
+export function shutdownHudLabel(reason: string | null): string {
+  if (!reason) return 'STOPPING';
+  if (reason.startsWith('updating to ')) return `UPDATING ${reason.slice('updating to '.length)}`;
+  if (reason === 'its engine pool was resized') return 'RESTARTING';
+  if (reason.startsWith('an operator retired')) return 'RETIRING';
+  if (reason.startsWith('Shipyard no longer takes')) return 'UNENROLLED';
+  return 'STOPPING';
+}
+
+/**
+ * The note shown in a shutting-down pool's burning section and fleet member
+ * heading, derived from the reason the pool was asked to stop.
+ */
+export function shutdownNote(reason: string | null): string {
+  if (!reason) return 'finishing what is in flight, then stopping';
+  if (reason.startsWith('updating to ')) return `finishing what is in flight, then ${reason}`;
+  if (reason === 'its engine pool was resized') return 'finishing what is in flight, then restarting — engine pool resized';
+  if (reason.startsWith('an operator retired')) return 'finishing what is in flight, then stopping — retired by an operator';
+  if (reason.startsWith('Shipyard no longer takes')) return 'finishing what is in flight, then stopping — Shipyard no longer takes its token';
+  return `finishing what is in flight, then stopping — ${reason}`;
+}
+
+/**
  * The instruments along the top of the field: what used to be a header bar, a
  * hold banner and a status bar, as one reading of the run.
  */
@@ -41,6 +67,8 @@ export interface Vitals {
   usage: UsageGaugeView;
   connection: DashboardState['connection'];
   phase: RunPhase;
+  /** Why the pool was asked to stop; null when no reason was given (e.g. operator pressed Ctrl-C). */
+  shutdownReason: string | null;
   /** How many engines are in the pool, and how many are running an action. */
   engines: number;
   burning: number;
@@ -114,6 +142,7 @@ export function vitals(state: DashboardState, nowMs: number): Vitals {
     usage: usageGaugeView(state.usage, nowMs, usageLimitUntilMs(hold)),
     connection: state.connection,
     phase: state.appShutdown ? 'shut-down' : state.shutdownRequested ? 'shutting-down' : 'running',
+    shutdownReason: state.shutdownReason ?? null,
     engines: state.cylinders.length,
     burning: state.cylinders.filter((c) => c.status === 'active').length,
     eventCount: state.eventCount,

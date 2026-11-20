@@ -1,4 +1,4 @@
-import { CENTRAL_MEMBER_ID, type ConsoleState, type MemberAck } from "../shared/protocol.js";
+import { CENTRAL_MEMBER_ID, type ConsolePush, type ConsoleState, type MemberAck } from "../shared/protocol.js";
 import {
   activeMembers,
   authenticateMember,
@@ -211,7 +211,19 @@ function ack(p: Platform, member: MemberRow): MemberAck {
 async function heard(p: Platform, member: MemberRow, body: Record<string, unknown>): Promise<MemberRow> {
   const { member: updated, restarted, changed } = await recordMemberReport(p, member, body);
   if (restarted) await resetMemberProcess(p, member.id);
-  if (changed || restarted) await pushToConsoles(p, { t: "changed" });
+  if (changed || restarted) {
+    await pushToConsoles(p, { t: "changed" });
+  } else if (updated.lastSeenAt && updated.lastSeenAt !== member.lastSeenAt) {
+    // Nothing a console would read the fleet again for, and yet the one thing
+    // it judges "offline" by has moved. On 2026-11-20 a member that had posted
+    // every few seconds for a quarter of an hour stood on the dashboard as
+    // offline, last heard from thirteen minutes before: the console's copy of
+    // when was as old as its last reading. So it is told, as often as it is
+    // written. Being told is not what the member's post is for: a console that
+    // cannot be reached does not hold it up.
+    await pushToConsoles(p, { t: "seen", member: member.id, at: updated.lastSeenAt } satisfies ConsolePush)
+      .catch((error) => p.log(`seen ${member.id}: ${error instanceof Error ? error.message : String(error)}`));
+  }
   return updated;
 }
 

@@ -58,7 +58,7 @@ export interface WorkView {
   failure: ActionFailure | null;
   /** What its PR's dashboard approval shows (#276, #278). */
   approval: ApprovalView;
-  /** Yoke is shutting down, so it has gone dark (#268). */
+  /** Shipyard is shutting down, so it has gone dark (#268). */
   dark: boolean;
   issueUrl: string | null;
   prUrl: string | null;
@@ -120,7 +120,7 @@ export function briefStatus(status: WorkStatus): string {
 
 /**
  * The lifecycle every piece of work runs through, in order: an open issue, an
- * engine building it, a draft PR that yoke reviews and fixes, a PR that is
+ * engine building it, a draft PR that Shipyard reviews and fixes, a PR that is
  * ready, and the merge. The field draws a work's place on it as a track of
  * five marks.
  */
@@ -169,7 +169,7 @@ function numbersList(numbers: readonly number[]): string {
 /**
  * Where a piece of work stands, in one line. An approval says its own piece
  * first — it is the one thing here a person set in motion, so its progress
- * (`queued — sent to yoke…`) or its refusal outranks everything the lifecycle
+ * (`queued — sent to Shipyard…`) or its refusal outranks everything the lifecycle
  * has to say. After that the line names the one thing the work is waiting on.
  */
 export function workStatus(params: {
@@ -193,21 +193,21 @@ export function workStatus(params: {
   }
   if (approval.line) {
     // An approval's line leads with the word for where it has got to —
-    // "queued — sent to yoke…", "not approved: its checks are failing".
+    // "queued — sent to Shipyard…", "not approved: its checks are failing".
     const brief = approval.line.text.split(/ — |: /)[0] ?? approval.line.text;
     return { text: approval.line.text, tone: approval.line.tone, signal: approvalSignal(approval), brief };
   }
   // Merged and manual are outcomes nobody has to act on here: neutral.
-  if (pair.disabled) return { text: 'manual — yoke leaves it to you', tone: 'plain', signal: null, brief: 'manual' };
+  if (pair.disabled) return { text: 'manual — Shipyard leaves it to you', tone: 'plain', signal: null, brief: 'manual' };
   if (pair.prPhase === 'completed') return { text: 'merged', tone: 'plain', signal: null };
   if (pair.prPhase === 'inactive') return { text: pair.projectStatus || 'out of the queue', tone: 'plain', signal: null };
   if (failure) {
-    // Yoke retries a failed action by itself, so this says so; the error is
+    // Shipyard retries a failed action by itself, so this says so; the error is
     // on the inbox card and in the log.
     const failed = `${actionVerb(failure.actionType)} failed`;
     return dark
       ? { text: failed, tone: 'problem', signal: 'error' }
-      : { text: `${failed} — yoke retries it`, tone: 'problem', signal: 'error', brief: failed };
+      : { text: `${failed} — Shipyard retries it`, tone: 'problem', signal: 'error', brief: failed };
   }
   // Neutral, and said once per line in a word: that its repository is
   // assigned to no one is a card in the inbox, in a signal, said once.
@@ -238,10 +238,10 @@ export function workStatus(params: {
 }
 
 /**
- * The signal an approval's line carries: refused or failed is an error; yoke
+ * The signal an approval's line carries: refused or failed is an error; Shipyard
  * asking for one — the Approve button waiting to be pressed — is a review;
- * one yoke has recorded is an approval going through, until its PR merges,
- * which is neutral like any other merge. A press yoke has not answered yet is
+ * one Shipyard has recorded is an approval going through, until its PR merges,
+ * which is neutral like any other merge. A press Shipyard has not answered yet is
  * neutral too: nothing has happened to it to say.
  */
 function approvalSignal(approval: ApprovalView): WorkSignal | null {
@@ -392,7 +392,7 @@ const LEVEL_RANK: Readonly<Record<BurnLevel, number>> = { burning: 0, queued: 0,
 
 /**
  * The order a project's work is laid out in below the reactors (#290): queued
- * ahead of waiting, and waiting ahead of cold, so that what yoke works next
+ * ahead of waiting, and waiting ahead of cold, so that what Shipyard works next
  * still leads; then `compareWork` within each level.
  */
 export function compareProjectWork(a: WorkView, b: WorkView): number {

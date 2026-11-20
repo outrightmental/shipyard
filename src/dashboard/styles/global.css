@@ -24,7 +24,7 @@ body {
    keep-awake lamp, the inbox down the right-hand edge, and the activity
    drawer. There are no panels: what the run is doing is painted on the
    canvas, and takes the room its state has earned (field/layout.ts). */
-yoke-app {
+shipyard-app {
   position: fixed;
   inset: 0;
   display: block;
@@ -43,7 +43,7 @@ yoke-app {
   overflow: clip;
 }
 
-yoke-field {
+shipyard-field {
   position: absolute;
   inset: 0;
   display: block;

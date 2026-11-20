@@ -3,7 +3,7 @@
    screen, top to bottom. It is laid out for a finger: each target is at least
    44 pixels tall and the one that matters on a card is 56, nothing is revealed
    by hovering, and nothing here is reached for across the picture. */
-yoke-inbox { display: contents; }
+shipyard-inbox { display: contents; }
 
 .inbox {
   position: absolute;
@@ -321,7 +321,7 @@ yoke-inbox { display: contents; }
   cursor: default;
 }
 
-/* Yoke refused the press, or it failed: the line says why. */
+/* Shipyard refused the press, or it failed: the line says why. */
 .inbox-action.approve.retry:not(:disabled) {
   border-color: rgba(var(--color-coral-rgb), 0.8);
   color: var(--color-coral);

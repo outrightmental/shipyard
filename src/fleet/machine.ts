@@ -14,7 +14,7 @@ import { commitOf } from "../shared/release.js";
  *
  * The home holds the enrollment and the token and nothing else of
  * Shipyard's. What the engines keep — checkouts, scratch, session history —
- * is where Yoke has always kept it.
+ * is where Shipyard has always kept it.
  */
 
 /** This checkout: the directory package.json is in. */

@@ -22,7 +22,7 @@ export const TAP_SHIELD_MS = 600;
  * It only draws cards; what cards there are is `buildInbox`'s business. Every
  * target on it is sized for a finger, and nothing on it depends on hovering.
  */
-export class YokeInbox extends LitElement {
+export class ShipyardInbox extends LitElement {
   static override properties = {
     cards: { attribute: false },
     inspection: { attribute: false },
@@ -340,4 +340,4 @@ export class YokeInbox extends LitElement {
   }
 }
 
-customElements.define('yoke-inbox', YokeInbox);
+customElements.define('shipyard-inbox', ShipyardInbox);

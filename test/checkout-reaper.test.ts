@@ -186,7 +186,7 @@ test("a checkout used since its project's snapshot began loading is not taken fo
   // The snapshot can be a whole cycle_minimum_seconds old, older if a later
   // load failed: an issue filed, or a PR an engine opened, since then is
   // missing from it without being closed.
-  const root = await mkdtemp(join(tmpdir(), "yoke-reaper-asof-"));
+  const root = await mkdtemp(join(tmpdir(), "shipyard-reaper-asof-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const canonicalDir = await makeCheckoutDirs(root, ["issue-1", "pr-2"]);
   const usedAt = (await stat(join(root, "acme-widgets", "pr-2"))).mtimeMs;
@@ -221,7 +221,7 @@ async function makeCheckoutDirs(root: string, names: readonly string[]): Promise
 }
 
 test("the reaper removes finished checkouts, honours dry-run, and leaves claimed ones", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "yoke-reaper-"));
+  const root = await mkdtemp(join(tmpdir(), "shipyard-reaper-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const canonicalDir = await makeCheckoutDirs(root, ["issue-1", "issue-2", "pr-3"]);
   const project = {
@@ -255,7 +255,7 @@ test("the reaper removes finished checkouts, honours dry-run, and leaves claimed
 });
 
 test("an engine cannot claim work while its checkout is being removed, and the reaper skips work claimed since it looked", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "yoke-reaper-race-"));
+  const root = await mkdtemp(join(tmpdir(), "shipyard-reaper-race-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const canonicalDir = await makeCheckoutDirs(root, ["issue-1", "issue-2"]);
   const claimedActions = new Set<string>();
@@ -305,7 +305,7 @@ test("an engine cannot claim work while its checkout is being removed, and the r
 });
 
 test("a disk still short after the pass is reported low, and the hold announces each change once", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "yoke-reaper-low-"));
+  const root = await mkdtemp(join(tmpdir(), "shipyard-reaper-low-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const canonicalDir = await makeCheckoutDirs(root, ["issue-1"]);
   const report = await runCheckoutReaper({
@@ -345,7 +345,7 @@ function git(cwd: string, ...args: string[]): string {
 }
 
 test("a worktree on a branch, or detached at a reachable commit, is reachable; one detached at its own commit is not", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "yoke-reaper-git-"));
+  const root = await mkdtemp(join(tmpdir(), "shipyard-reaper-git-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const canonicalDir = join(root, "acme-widgets", "_main");
   await mkdir(canonicalDir, { recursive: true });
@@ -359,7 +359,7 @@ test("a worktree on a branch, or detached at a reachable commit, is reachable; o
   const onBranch = join(root, "acme-widgets", "issue-1");
   const detachedReachable = join(root, "acme-widgets", "pr-2");
   const detachedOwn = join(root, "acme-widgets", "pr-3");
-  git(canonicalDir, "worktree", "add", "-b", "yoke/issue-1", onBranch, "main");
+  git(canonicalDir, "worktree", "add", "-b", "shipyard/issue-1", onBranch, "main");
   git(canonicalDir, "worktree", "add", "--detach", detachedReachable, "main");
   git(canonicalDir, "worktree", "add", "--detach", detachedOwn, "main");
   await writeFile(join(detachedOwn, "lost.txt"), "only here\n");
@@ -387,6 +387,6 @@ test("a worktree on a branch, or detached at a reachable commit, is reachable; o
   // Removal goes through git: the directory and its admin entry go, the branch stays.
   await removeCheckout(canonicalDir, onBranch);
   await assert.rejects(stat(onBranch));
-  assert.equal(git(canonicalDir, "rev-parse", "--verify", "--quiet", "refs/heads/yoke/issue-1") !== "", true);
+  assert.equal(git(canonicalDir, "rev-parse", "--verify", "--quiet", "refs/heads/shipyard/issue-1") !== "", true);
   assert.equal(git(canonicalDir, "worktree", "list", "--porcelain").includes(onBranch), false);
 });

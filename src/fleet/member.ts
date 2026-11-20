@@ -14,7 +14,7 @@ import { fastForwardTo, needsUpdate, updateBlockedLine, type UpdateResult } from
 import { Uplink } from "./uplink.js";
 
 /**
- * A fleet member (#4): Yoke's engine pool, with its configuration, its GitHub
+ * A fleet member (#4): Shipyard's engine pool, with its configuration, its GitHub
  * access and its orders coming from Shipyard rather than from a local
  * `env.yaml`.
  *
@@ -64,7 +64,7 @@ export function machineSettings(home: string): Partial<EnvConfig> {
   return settings as Partial<EnvConfig>;
 }
 
-/** A repository as Shipyard assigned it, as the project Yoke's configuration describes. */
+/** A repository as Shipyard assigned it, as the project Shipyard's configuration describes. */
 export function projectOf(repo: MemberConfig["repos"][number]): ProjectEnvConfig {
   return {
     github_repository: repo.repo,
@@ -76,7 +76,7 @@ export function projectOf(repo: MemberConfig["repos"][number]): ProjectEnvConfig
 }
 
 /**
- * What a member's configuration is as the configuration Yoke's engine pool
+ * What a member's configuration is as the configuration Shipyard's engine pool
  * reads: Shipyard's word on the pool's size and the repositories, the
  * machine's own on how its engines run.
  */

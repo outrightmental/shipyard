@@ -545,9 +545,9 @@ test("reducer: action-start records the cylinder's project repo; engine-idle cle
   let s = initialState();
   s = dashboardReducer(s, makeEvent("action-start", {
     actionIndex: 1, totalActions: 4, type: "start-implementation",
-    issueNumber: 210, repo: "outrightmental/yoke", description: "d",
+    issueNumber: 210, repo: "outrightmental/shipyard", description: "d",
   }));
-  assert.equal(s.cylinders[0]?.repo, "outrightmental/yoke");
+  assert.equal(s.cylinders[0]?.repo, "outrightmental/shipyard");
 
   s = dashboardReducer(s, makeEvent("engine-idle", { engineIndex: 0, reason: "nothing to do this cycle" }));
   assert.equal(s.cylinders[0]?.repo, null, "idle cylinder shows no project");
@@ -1176,7 +1176,7 @@ test("pillsDark: every pill goes dark once a shutdown is requested, and stays da
   s = dashboardReducer(s, makeEvent("action-start", {
     actionIndex: 1, totalActions: 3, type: "start-implementation", issueNumber: 5, repo: "o/a", description: "d",
   }));
-  assert.equal(pillsDark(s), false, "yoke is running");
+  assert.equal(pillsDark(s), false, "Shipyard is running");
 
   s = dashboardReducer(s, makeEvent("shutdown-requested", {}));
   assert.equal(pillsDark(s), true, "dark at once, while in-flight work still finishes");
@@ -1204,7 +1204,7 @@ test("frozenPillActivity: a dark pill's status icon stays frozen as it was while
   s = dashboardReducer(s, makeEvent("action-start", {
     actionIndex: 1, totalActions: 3, type: "self-review", pullRequestNumber: 31, repo: "o/a", description: "d",
   }));
-  assert.equal(s.frozenPillActivity, null, "nothing is frozen while yoke is running");
+  assert.equal(s.frozenPillActivity, null, "nothing is frozen while Shipyard is running");
 
   s = dashboardReducer(s, makeEvent("shutdown-requested", {}));
   assert.equal(pillsDark(s), true);
@@ -1587,7 +1587,7 @@ test("reducer: the answer to a press never goes stale, while other outcomes do",
   assert.equal(s.approvals.get("o/a#10")?.reason, "its checks are failing");
 });
 
-test("unansweredApprovalPresses: the presses to send again on reconnecting are the ones yoke has not answered (#278)", (t) => {
+test("unansweredApprovalPresses: the presses to send again on reconnecting are the ones Shipyard has not answered (#278)", (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: 1_000_000 });
   let s = recordApprovalPress(initialState(), PRESSED, false, 1_000_000);
   s = recordApprovalPress(s, { repo: "o/a", pullRequestNumber: 11 }, true, 1_000_000);
@@ -1636,7 +1636,7 @@ test("DashboardStore.bootstrap() on a reconnect keeps the dashboard's presses an
 
 test("DashboardStore.bootstrap() drops an approval the server no longer replays as under way, so the press is sent again", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: 1_000_000 });
-  // Yoke restarted mid-approval: the new server replays the lifecycle and
+  // Shipyard restarted mid-approval: the new server replays the lifecycle and
   // nothing of the attempt the old one had under way.
   await withMockFetch({ ...MOCK_STATE_RESPONSE, cachedEvents: [lifecycleEvent("o/a", [10])] }, async () => {
     const store = new DashboardStore();
@@ -1644,7 +1644,7 @@ test("DashboardStore.bootstrap() drops an approval the server no longer replays 
       store.approvePullRequest(PRESSED);
       t.mock.timers.tick(1_000);
       store.applyEvent(approvalEvent("o/a", 10, "loading"));
-      assert.equal(unansweredApprovalPresses(store.getState()).length, 0, "answered while yoke had it");
+      assert.equal(unansweredApprovalPresses(store.getState()).length, 0, "answered while Shipyard had it");
       await store.bootstrap();
 
       const state = store.getState();

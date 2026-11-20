@@ -13,8 +13,8 @@ import { workingCylinder } from './working-cylinder.js';
  * mark at the end of its line on the field (issue #262):
  *
  * - `working`: an engine cylinder is running an action on it.
- * - `manual`: its PR is labelled "manual", so yoke leaves it to a human.
- * - `waiting-ci`: its PR's checks are queued or running. Yoke never advances
+ * - `manual`: its PR is labelled "manual", so Shipyard leaves it to a human.
+ * - `waiting-ci`: its PR's checks are queued or running. Shipyard never advances
  *   a PR past pending checks, so that is why no engine is working it.
  * - `review`: its PR is ready for review — and not yet approved for merge on
  *   the dashboard (#274), when it is no longer waiting on a reviewer.
@@ -51,7 +51,7 @@ export function pillActivity(
 
 /**
  * Whether every lifecycle pill is dark (issue #268): from the moment a shutdown
- * is requested — or, for a dashboard that only hears the end of it, once yoke
+ * is requested — or, for a dashboard that only hears the end of it, once Shipyard
  * has shut down. No engine starts new work after that, and the pills will get
  * no further updates to keep them live, so they all go dark together, active
  * or not, like the shut-down cylinder rows.

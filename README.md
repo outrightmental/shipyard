@@ -7,7 +7,7 @@
 
 Shipyard is one control surface, at [shipyard.outright.io](https://shipyard.outright.io), that many machines hosting coding agents subscribe to. You write issues. A fleet of machines — each one a laptop or a server signed in to one Claude account — works them: implements each issue, opens a pull request, reviews its own diff, fixes what needs fixing, and merges. Shipyard is where you see all of it at once, decide what each machine works on, and make the few decisions that are yours to make.
 
-It is [Yoke](design/YOKE.md) run as a service. Yoke does all of this on one machine, for whoever is sitting at it; its engine is what every fleet member runs, unchanged in how it works an issue. Shipyard is what was missing for more than one machine: somewhere central that knows the fleet, hands out the work, and adds every machine's dashboard up into one.
+It is [Shipyard's engine](design/SHIPYARD.md) run as a service. The engine does all of this on one machine, for whoever is sitting at it; it is what every fleet member runs, unchanged in how it works an issue. Shipyard is what was missing for more than one machine: somewhere central that knows the fleet, hands out the work, and adds every machine's dashboard up into one.
 
 ## What you see
 
@@ -29,7 +29,7 @@ It is [Yoke](design/YOKE.md) run as a service. Yoke does all of this on one mach
 └──────────┴────────────────────────────────────────────────────┴───────────────┘
 ```
 
-- **Dashboard** is Yoke's, as it is drawn — [the field and the inbox](design/DASHBOARD.md) — for the whole fleet. Work that is burning is at the top, **grouped by the fleet member burning it**, with that member's own Claude usage in its heading, and how its machine is doing along the heading's right-hand end. Everything else is below, grouped by repository.
+- **Dashboard** is Shipyard's, as it is drawn — [the field and the inbox](design/DASHBOARD.md) — for the whole fleet. Work that is burning is at the top, **grouped by the fleet member burning it**, with that member's own Claude usage in its heading, and how its machine is doing along the heading's right-hand end. Everything else is below, grouped by repository.
 - **Fleet** is the machines: which are online, the commit each runs, its Claude usage, how many cylinders it has, how its machine is doing, what it is assigned.
 - **Repositories** is where Shipyard is connected to GitHub and where work is given out: subscribe to a repository, and assign it to a fleet member.
 - **The inbox**, down the right-hand edge, is everything waiting on a person: a PR to approve, and whatever is stopping work across the fleet.
@@ -48,7 +48,7 @@ The menu down the left folds to its icons.
                  │                                  │
            fleet member                       fleet member          …one per Claude account
            atlas (a laptop)                   borealis (a server)
-           Yoke's engine pool                 Yoke's engine pool
+           Shipyard's engine pool              Shipyard's engine pool
            acme/atlas-api, acme/atlas-web     acme/xj-music
 ```
 
@@ -110,7 +110,7 @@ That is all. Write issues.
 
 ## A fleet member
 
-A fleet member is Yoke's engine pool with its orders coming from Shipyard. How it works an issue — the labels, the dependency phrases, the review loop, Project SDLC — is all [Yoke's](design/YOKE.md) and is described there.
+A fleet member is Shipyard's engine pool. How it works an issue — the labels, the dependency phrases, the review loop, Project SDLC — is all described in [Shipyard's engine README](design/SHIPYARD.md).
 
 **It holds no GitHub credential.** It asks Shipyard for a token that reaches only its repositories and lasts an hour, and renews it before it runs out. Its commits are the GitHub App's own.
 
@@ -125,7 +125,7 @@ A fleet member is Yoke's engine pool with its orders coming from Shipyard. How i
 | Its enrollment and token | `~/.shipyard/` (`SHIPYARD_HOME`) |
 | Its log | `~/.shipyard/fleet.log` (Linux: `journalctl --user -u shipyard-fleet -f`) |
 | Its own settings | `~/.shipyard/env.yaml`: the models its engines use, how long a run may take, how much disk to keep free, its dashboard's port. See [`fleet.env.example.yaml`](fleet.env.example.yaml). What it works on is never set here. |
-| Its checkouts and scratch | `~/.yoke/`, where Yoke has always kept them |
+| Its checkouts and scratch | `~/.shipyard/` |
 | Run it by hand | `npm run fleet` |
 | Enroll it again | `npm run enroll -- --code <a new code>`: it stays the member it was, with its name and its repositories |
 | Retire it | **Fleet → Retire**. Its token stops working at once and the machine stops. |
@@ -162,12 +162,12 @@ This repository is public, so nothing that identifies the account or the operato
 | --- | --- |
 | `src/platform/` | the function: the fleet, the repositories, the GitHub App, the relay of every member's events |
 | `src/fleet/` | a fleet member: enrolling, the service, the line to Shipyard, keeping itself up to date |
-| `src/dashboard/` | the dashboard (Yoke's field and inbox) and, in `console/`, the console around it |
+| `src/dashboard/` | the dashboard (Shipyard's field and inbox) and, in `console/`, the console around it |
 | `src/shared/` | what the platform, the fleet and the console all read: the protocol between them |
-| `src/*.ts` | Yoke's engine, as it is upstream but for a few seams |
+| `src/*.ts` | Shipyard's engine, as it is upstream but for a few seams |
 | `console/` | the sign-in pages, and the console's entry page |
 | `infra/` | the three Terraform roots |
-| `design/` | how Yoke works, and how its dashboard is built |
+| `design/` | how Shipyard works, and how its dashboard is built |
 
 ## Working on it
 
@@ -197,6 +197,6 @@ npm run demo:dashboard
 
 **The platform on a local port**, with its table in memory, is `startLocalPlatform` in `src/platform/local.ts`. The fleet member's tests run a real member against it, over real HTTP and a real socket.
 
-**Yoke by hand**, on one machine from an `env.yaml`, still works exactly as [its README](design/YOKE.md) says: `npm run dev`.
+**Run by hand**, on one machine from an `env.yaml`, using `npm run dev`: [how the engine works](design/SHIPYARD.md).
 
-Yoke is the `upstream` remote. The engine under `src/*.ts` is kept close to it on purpose, so its improvements still merge.
+The engine under `src/*.ts` is kept close to the `shipyard` upstream remote on purpose, so its improvements still merge.

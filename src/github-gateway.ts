@@ -107,7 +107,7 @@ function headersToObject(headers: Headers): Record<string, string> {
 }
 
 /**
- * Single choke-point for every GitHub REST and GraphQL call yoke makes.
+ * Single choke-point for every GitHub REST and GraphQL call Shipyard makes.
  *
  * Frugality with the GitHub rate limit is built in at three layers:
  *  1. A serialized request queue ({@link enqueue}) so calls never burst.
@@ -151,7 +151,7 @@ export class GitHubApiGateway {
   constructor(options: GitHubApiGatewayOptions) {
     this.apiBaseUrl = options.apiBaseUrl ?? "https://api.github.com";
     this.token = options.token;
-    this.userAgent = options.userAgent ?? "yoke";
+    this.userAgent = options.userAgent ?? "Shipyard";
     this.apiVersion = options.apiVersion ?? "2022-11-28";
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.eventEmitter = options.eventEmitter ?? globalEventEmitter;
@@ -402,7 +402,7 @@ export class GitHubApiGateway {
 
       if (!response.ok) {
         console.error(
-          `[yoke] GitHub ${response.status} ${response.statusText} for ${path}. Response body:\n${responseBody || "(empty)"}`,
+          `[Shipyard] GitHub ${response.status} ${response.statusText} for ${path}. Response body:\n${responseBody || "(empty)"}`,
         );
         throw toErrorWithStatus(
           `GitHub request failed (${response.status} ${response.statusText}) for ${path}. Response body: ${responseBody || "(empty)"}`,

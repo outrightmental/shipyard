@@ -1207,7 +1207,7 @@ test("stripNonAuthoredText keeps the author's lines and drops quoted ones", () =
 
 test("a pasted email listing sibling issues gives the quoting issue no edges (butterfly#304)", () => {
   // Regression: butterfly#304 quoted an email listing its siblings with their
-  // own relationships. Yoke read them as 304 being blocked by 305 and 304
+  // own relationships. Shipyard read them as 304 being blocked by 305 and 304
   // blocking 306, though 305 is only *related to* 304.
   const body = [
     "Splitting the daily-grain rollback into smaller steps.",

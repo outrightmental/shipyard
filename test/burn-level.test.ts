@@ -120,7 +120,7 @@ test("a pill's activity sets its level: working burns, CI is next, review waits,
   assert.equal(pillBurnLevel(pair({ disabled: true }), "manual", false), "cold");
 });
 
-test("a dark pill is cold whatever it was doing when yoke shut down", () => {
+test("a dark pill is cold whatever it was doing when Shipyard shut down", () => {
   for (const activity of ["working", "waiting-ci", "review", "manual", null] as const) {
     assert.equal(pillBurnLevel(pair(), activity, true), "cold", `dark and ${activity}`);
   }

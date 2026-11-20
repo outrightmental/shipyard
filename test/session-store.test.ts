@@ -10,7 +10,7 @@ import { FileSessionStore, migrateLegacySessionStore } from "../src/session-stor
 async function withTempStore<T>(
   callback: (store: FileSessionStore, filePath: string) => Promise<T>,
 ): Promise<T> {
-  const dir = await mkdtemp(join(tmpdir(), "yoke-session-test-"));
+  const dir = await mkdtemp(join(tmpdir(), "shipyard-session-test-"));
   const filePath = join(dir, "sessions.json");
   const store = new FileSessionStore(filePath);
   try {
@@ -243,7 +243,7 @@ test("FileSessionStore completeSession preserves lastReadPrComments", async () =
 // ─── migrateLegacySessionStore (vibrator → yoke default path move, #237) ─────
 
 async function withTempDir<T>(callback: (dir: string) => Promise<T>): Promise<T> {
-  const dir = await mkdtemp(join(tmpdir(), "yoke-session-migrate-test-"));
+  const dir = await mkdtemp(join(tmpdir(), "shipyard-session-migrate-test-"));
   try {
     return await callback(dir);
   } finally {
@@ -253,8 +253,8 @@ async function withTempDir<T>(callback: (dir: string) => Promise<T>): Promise<T>
 
 test("migrateLegacySessionStore moves a legacy store into place when nothing exists at the current path", async () => {
   await withTempDir(async (dir) => {
-    const legacyPath = join(dir, ".vibrator", "owner-repo-sessions.json");
-    const currentPath = join(dir, ".yoke", "owner-repo-sessions.json");
+    const legacyPath = join(dir, ".yoke", "owner-repo-sessions.json");
+    const currentPath = join(dir, ".shipyard", "owner-repo-sessions.json");
     await mkdir(dirname(legacyPath), { recursive: true });
     await writeFile(legacyPath, JSON.stringify({ sessions: [], lastReadPrComments: { "10": "2024-06-01T12:00:00.000Z" } }), "utf8");
 
@@ -270,8 +270,8 @@ test("migrateLegacySessionStore moves a legacy store into place when nothing exi
 
 test("migrateLegacySessionStore never overwrites a store that already exists at the current path", async () => {
   await withTempDir(async (dir) => {
-    const legacyPath = join(dir, ".vibrator", "owner-repo-sessions.json");
-    const currentPath = join(dir, ".yoke", "owner-repo-sessions.json");
+    const legacyPath = join(dir, ".yoke", "owner-repo-sessions.json");
+    const currentPath = join(dir, ".shipyard", "owner-repo-sessions.json");
     await mkdir(dirname(legacyPath), { recursive: true });
     await mkdir(dirname(currentPath), { recursive: true });
     await writeFile(legacyPath, JSON.stringify({ sessions: [], lastReadPrComments: { "10": "legacy" } }), "utf8");
@@ -287,8 +287,8 @@ test("migrateLegacySessionStore never overwrites a store that already exists at 
 
 test("migrateLegacySessionStore is a no-op when there is no legacy store", async () => {
   await withTempDir(async (dir) => {
-    const legacyPath = join(dir, ".vibrator", "owner-repo-sessions.json");
-    const currentPath = join(dir, ".yoke", "owner-repo-sessions.json");
+    const legacyPath = join(dir, ".yoke", "owner-repo-sessions.json");
+    const currentPath = join(dir, ".shipyard", "owner-repo-sessions.json");
 
     assert.equal(migrateLegacySessionStore(currentPath, legacyPath), false);
 

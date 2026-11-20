@@ -37,7 +37,7 @@ interface DashboardServerConfig {
    * those are made in Shipyard. A press that reaches it anyway is refused.
    */
   readOnly?: boolean;
-  /** What this is a dashboard of, said under its title: "Yoke", or "Shipyard". */
+  /** What this is a dashboard of, said under its title: "Shipyard", or "Shipyard". */
   brand?: string;
   /** Event emitter the engine pool publishes to. When provided, cylinder-cancel
    *  signals are emitted to it (not globalEventEmitter). App-level events
@@ -138,13 +138,13 @@ export const READ_ONLY_REASON =
 
 /** Why a press of Approve from a page `isSameOriginRequest` turns away is refused. */
 export const NOT_OWN_PAGE_REASON =
-  "this page's address is not one yoke takes approvals from — open the dashboard by IP address or as localhost";
+  "this page's address is not one Shipyard takes approvals from — open the dashboard by IP address or as localhost";
 
 /**
  * Whether a WebSocket was opened by the dashboard's own page. A browser lets
  * any site it visits open a socket to localhost, but always names that site in
  * the Origin header, so only a same-origin page — or a client that is not a
- * browser and sends no Origin at all — may ask yoke to merge a PR.
+ * browser and sends no Origin at all — may ask Shipyard to merge a PR.
  *
  * Same-origin alone is not enough: a site whose domain name is made to
  * resolve to 127.0.0.1 (DNS rebinding) is same-origin with itself. So the page
@@ -198,7 +198,7 @@ export class DashboardServer {
     this.multiProject = config.multiProject ?? false;
     this.projects = config.projects ?? [];
     this.readOnly = config.readOnly ?? false;
-    this.brand = config.brand ?? "Yoke";
+    this.brand = config.brand ?? "Shipyard";
     if (typeof config.maxConcurrency === "number") this.maxConcurrency = config.maxConcurrency;
     this.projectEmitter = config.eventEmitter ?? globalEventEmitter;
 
@@ -260,7 +260,7 @@ export class DashboardServer {
     if (pathname === "/" || pathname === "/index.html") {
       try {
         let html = await fs.promises.readFile(STATIC_INDEX, "utf-8");
-        html = html.replace(/(<title>)Yoke([:< ])/, (_, p1: string, p2: string) => `${p1}${this.dashboardTitle}${p2}`);
+        html = html.replace(/(<title>)Shipyard([:< ])/, (_, p1: string, p2: string) => `${p1}${this.dashboardTitle}${p2}`);
         res.writeHead(200, { "Content-Type": "text/html" });
         res.end(html);
       } catch {
@@ -499,7 +499,7 @@ export class DashboardServer {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Yoke: AI SDLC Dashboard</title>
+  <title>Shipyard: AI SDLC Dashboard</title>
   <style>${css}</style>
 </head>
 <body>
@@ -1575,7 +1575,7 @@ class DashboardUI {
             <div class="lifecycle-header">
               <!-- Removed the redundant title -->
               <div id="lifecycle-content" class="lifecycle-content">
-                <div class="lifecycle-empty">Connecting to yoke…</div>
+                <div class="lifecycle-empty">Connecting to Shipyard…</div>
               </div>
             </div>
           </div>
@@ -1884,7 +1884,7 @@ class DashboardUI {
     this.ws.onopen = () => {
       this.connected = true;
       this.updateConnectionStatus(true);
-      this.addEventToStream('Connected to yoke dashboard', -1, 'success');
+      this.addEventToStream('Connected to Shipyard dashboard', -1, 'success');
     };
 
     this.ws.onmessage = (event) => {
@@ -2146,7 +2146,7 @@ class DashboardUI {
       statusEl.style.cssText = 'background:rgba(255,102,0,0.12);border-color:#ff6600;color:#ff6600;';
       textEl.textContent = '⏹ SHUTDOWN';
     }
-    this.addEventToStream('⏹ Yoke shutdown complete', -1, 'warning');
+    this.addEventToStream('⏹ Shipyard shutdown complete', -1, 'warning');
   }
 
   handleCylinderCancel(message) {
@@ -2168,7 +2168,7 @@ class DashboardUI {
       category: 'ci',
       label: 'WORKFLOW',
       stateBefore: 'Workflow "' + runName + '" was awaiting approval',
-      changeHow: 'Yoke automatically approved the workflow run',
+      changeHow: 'Shipyard automatically approved the workflow run',
       stateAfter: '✅ Workflow "' + runName + '" approved and queued',
       excellence: 'CI pipeline unblocked — automated approval keeps development flowing',
       workerIndex: undefined,

@@ -1,7 +1,7 @@
 import type { ActionFailure, LifecyclePair } from '../store/types.js';
 
 /** How long a failed action stays on the dashboard when nothing takes its work
- *  up again. Yoke backs a failing action off for as long as an hour before it
+ *  up again. Shipyard backs a failing action off for as long as an hour before it
  *  tries again (`ACTION_FAILURE_BACKOFF_MS` in src/index.ts), and a failure
  *  should not leave the dashboard while its work is still parked because of it. */
 export const FAILURE_SHOW_MS = 90 * 60_000;

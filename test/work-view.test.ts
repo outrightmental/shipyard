@@ -74,7 +74,7 @@ test("a line of status names the one thing a piece of work is waiting on, and th
     ["parked for approval", prPair(1, 10, { prPhase: "review", approval: "awaiting-approval" }, { draft: false }), "ready — waiting for your approval", "plain", "review"],
     ["parked, checks failing", prPair(1, 10, { prPhase: "review", approval: "awaiting-approval" }, { draft: false, checksStatus: "failure" }), "ready — but its checks are failing", "problem", "error"],
     ["approved", prPair(1, 10, { prPhase: "review", approval: "approved" }, { draft: false }), "approved — waiting for a free engine to squash-merge it", "approved", "approved"],
-    ["manual", prPair(1, 10, { prPhase: "review", disabled: true }, { draft: false }), "manual — yoke leaves it to you", "plain", null],
+    ["manual", prPair(1, 10, { prPhase: "review", disabled: true }, { draft: false }), "manual — Shipyard leaves it to you", "plain", null],
     ["merged", prPair(1, 10, { prPhase: "completed" }), "merged", "plain", null],
   ];
   for (const [description, pair, text, tone, signal] of cases) {
@@ -98,7 +98,7 @@ test("an approval's line carries its own signal: asked for is a review, refused 
   assert.equal(recorded.status.signal, "approved", "an approval going through");
 
   const sent = only(parked, { approvalPresses: new Map([["o/a#10", { ...press, atMs: NOW }]]) });
-  assert.equal(sent.status.text, "queued — sent to yoke…");
+  assert.equal(sent.status.text, "queued — sent to Shipyard…");
   assert.equal(sent.status.signal, null, "no answer yet: nothing has happened to say");
 
   const merged = only(parked, { approvalPresses: new Map([["o/a#10", { ...press, merged: true }]]) });
@@ -116,7 +116,7 @@ test("an action that failed on a piece of work is an error on its line until an 
   const state = failed(prPair(7, 10, { repo: "o/a" }));
   const [work] = workViews(state, NOW);
   assert.ok(work?.failure, "the work knows its last action failed");
-  assert.equal(work.status.text, "reviewing failed — yoke retries it");
+  assert.equal(work.status.text, "reviewing failed — Shipyard retries it");
   assert.equal(briefStatus(work.status), "reviewing failed");
   assert.equal(work.status.signal, "error");
   assert.equal(workGlyph(work), "failing", "and its mark says so");
@@ -147,7 +147,7 @@ test("an action that failed on a piece of work is an error on its line until an 
   const sentLine = {
     ...work,
     activity: null,
-    approval: { ...work.approval, line: { text: "queued — sent to yoke…", tone: "progress" as const } },
+    approval: { ...work.approval, line: { text: "queued — sent to Shipyard…", tone: "progress" as const } },
   };
   assert.notEqual(workGlyph(sentLine), "failing", "an approval's line, not a failure, says what the line is waiting on");
 
@@ -204,7 +204,7 @@ test("an approval says its own piece first: it is the one thing a person set in 
   const pressed = only(prPair(1, 10, { prPhase: "review", approval: "awaiting-approval", repo: "o/a" }, { draft: false }), {
     approvalPresses: new Map([["o/a#10", { repo: "o/a", pullRequestNumber: 10, atMs: NOW, sent: true }]]),
   });
-  assert.equal(pressed.status.text, "queued — sent to yoke…");
+  assert.equal(pressed.status.text, "queued — sent to Shipyard…");
 });
 
 test("work an engine is on says what the engine is doing to it", () => {
@@ -314,7 +314,7 @@ test("within a project, queued work comes first, then waiting, then cold, each i
     ["queued", 6], ["queued", 5], ["queued", 9],
     ["waiting", 4], ["waiting", 3],
     ["cold", 1], ["cold", 8], ["cold", 2],
-  ], "a merge would lead the lot by its order alone; by level it follows what yoke works next");
+  ], "a merge would lead the lot by its order alone; by level it follows what Shipyard works next");
   const shuffled = [...works].reverse().sort(compareProjectWork);
   assert.deepEqual(shuffled.map((work) => work.key), works.map((work) => work.key), "the same order whatever order it arrives in");
 
@@ -325,7 +325,7 @@ test("within a project, queued work comes first, then waiting, then cold, each i
 });
 
 test("a piece of work is drawn whole while queued or burning, and at 40% while it waits or is cold (#290)", () => {
-  assert.equal(only(issuePair(9)).opacity, 1, "queued: what yoke works next");
+  assert.equal(only(issuePair(9)).opacity, 1, "queued: what Shipyard works next");
   assert.equal(only(prPair(9, 90, {}, { checksStatus: "pending" })).opacity, 1, "queued on its checks");
   assert.equal(only(issuePair(9, { blockedByIssueNumbers: [8] })).opacity, DIMMED_OPACITY, "waiting on other issues");
   assert.equal(only(prPair(9, 90, { prPhase: "review", approval: "awaiting-approval" }, { draft: false })).opacity, DIMMED_OPACITY, "waiting on a person");
@@ -454,7 +454,7 @@ test("vitals: the subtitle is the one project's name, or how many share the dash
   let multi: DashboardState = { ...initialState(), multiProject: true };
   for (const repo of ["o/a", "o/b", "o/c"]) multi = dashboardReducer(multi, makeEvent("lifecycle-update", { repo, pairs: [] }));
   assert.equal(vitals(multi, NOW).subtitle, "3 projects");
-  assert.equal(vitals({ ...initialState() }, NOW).title, "Yoke", "with no title configured it is yoke's own");
+  assert.equal(vitals({ ...initialState() }, NOW).title, "Shipyard", "with no title configured it is Shipyard's own");
 });
 
 test("vitals: shutting down, then shut down", () => {

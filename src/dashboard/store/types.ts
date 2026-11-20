@@ -51,7 +51,7 @@ export interface WorkHold {
 }
 
 /**
- * The latest reading of the free space where yoke keeps its checkouts (#288).
+ * The latest reading of the free space where Shipyard keeps its checkouts (#288).
  * `low` means even removing every idle checkout left it below the floor, so no
  * new work starts until there is room — the inbox lists it as a card.
  */
@@ -141,7 +141,7 @@ export interface LifecyclePair {
    *  while it is parked (its inbox card offers Approve), `approved` once
    *  approved and its squash-merge is pending. */
   approval?: 'awaiting-approval' | 'approved';
-  /** Set while yoke has asked a person to review the PR on GitHub and waits
+  /** Set while Shipyard has asked a person to review the PR on GitHub and waits
    *  for it (Project SDLC). The inbox lists it, with a link to the PR. */
   awaitingReview?: boolean;
   /** Set on work in a repository Shipyard is subscribed to and no fleet member
@@ -246,7 +246,7 @@ export interface ApprovalPress {
   /** False while it waits for a live connection to send it on. */
   sent: boolean;
   /** Epoch millis it was last sent, when that was after the press: sent
-   *  again on reconnecting, because yoke had not answered it. */
+   *  again on reconnecting, because Shipyard had not answered it. */
   sentAtMs?: number;
   /** An engine has since squash-merged the PR. */
   merged?: boolean;
@@ -333,7 +333,7 @@ export interface DashboardState {
   shutdownRequested: boolean;
   appShutdown: boolean;
   /** Each pill's activity, by pill key, as it stood when the pills went dark at
-   *  shutdown (issue #268); null while yoke is running. */
+   *  shutdown (issue #268); null while Shipyard is running. */
   frozenPillActivity: Map<string, PillActivity | null> | null;
   /** The hold parking every engine, or null when work is free to run. */
   hold: WorkHold | null;
@@ -359,7 +359,7 @@ export interface DashboardState {
   owner: string;
   repo: string;
   title: string;
-  /** What this is a dashboard of: "Yoke" for a pool run by hand, "Shipyard"
+  /** What this is a dashboard of: "Shipyard" for a pool run by hand, "Shipyard"
    *  for the fleet's dashboard and for a fleet member's own screen. */
   brand: string;
   /** Shipyard's dashboard: the fleet's members, in the order they joined, each

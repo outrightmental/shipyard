@@ -37,7 +37,7 @@ export interface LifecyclePair {
   /** Issue numbers blocking this issue, if any (populated for pre-implementation issues) */
   blockedByIssueNumbers?: number[];
   /**
-   * True when the PR is labelled "manual" — yoke will not work on it, so the
+   * True when the PR is labelled "manual" — Shipyard will not work on it, so the
    * dashboard draws it cold and lists it in the inbox as a person's to do.
    */
   disabled?: boolean;
@@ -51,7 +51,7 @@ export interface LifecyclePair {
   approval?: ReviewApproval;
   /**
    * Set while a PR is parked for a person to review on GitHub (Project SDLC):
-   * yoke has asked for the review and waits for it. Nothing on the dashboard
+   * Shipyard has asked for the review and waits for it. Nothing on the dashboard
    * can move such a PR on, so its inbox lists it with a link.
    */
   awaitingReview?: true;

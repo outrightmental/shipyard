@@ -110,7 +110,7 @@ function timestamp(): string {
 // deliberate stop, an external kill and a fatal error indistinguishable — from
 // the terminal, from `npm`, and from anything left on disk afterwards. An
 // incident that destroyed six in-flight agent runs had to be reconstructed from
-// the mtime of an npm debug log, because yoke itself wrote nothing.
+// the mtime of an npm debug log, because Shipyard itself wrote nothing.
 
 let exitReason: string | undefined;
 
@@ -127,9 +127,9 @@ export function setExitReason(reason: string): void {
 function installExitDiagnostics(): void {
   let appendToLog: ((line: string) => void) | undefined;
   try {
-    const logDir = path.join(process.cwd(), ".yoke");
+    const logDir = path.join(process.cwd(), ".shipyard");
     fs.mkdirSync(logDir, { recursive: true });
-    const stream = fs.createWriteStream(path.join(logDir, "yoke.log"), { flags: "a" });
+    const stream = fs.createWriteStream(path.join(logDir, "shipyard.log"), { flags: "a" });
     stream.on("error", () => {});
     appendToLog = (line: string) => stream.write(`[${timestamp()}] ${line}\n`);
     setLogSink(appendToLog);
@@ -148,14 +148,14 @@ function installExitDiagnostics(): void {
 
   process.on("uncaughtException", (error) => {
     setExitReason("uncaughtException");
-    record(`[yoke] FATAL uncaughtException: ${error?.stack ?? String(error)}`);
+    record(`[shipyard] FATAL uncaughtException: ${error?.stack ?? String(error)}`);
     process.exit(1);
   });
 
   process.on("unhandledRejection", (reason) => {
     setExitReason("unhandledRejection");
     record(
-      `[yoke] FATAL unhandledRejection: ${
+      `[shipyard] FATAL unhandledRejection: ${
         reason instanceof Error ? (reason.stack ?? reason.message) : String(reason)
       }`,
     );
@@ -165,7 +165,7 @@ function installExitDiagnostics(): void {
   process.on("exit", (code) => {
     const live = countLiveClaudeRuns();
     record(
-      `[yoke] exiting code=${code} reason=${exitReason ?? "normal"}` +
+      `[shipyard] exiting code=${code} reason=${exitReason ?? "normal"}` +
         (live > 0 ? ` (killing ${live} in-flight child process(es))` : ""),
     );
   });
@@ -173,7 +173,7 @@ function installExitDiagnostics(): void {
 
 // All terminal output goes through writeLogLine rather than console.log: the
 // Claude status board owns the bottom rows of the terminal and erases whatever
-// it finds there every 500 ms, which silently destroyed every error yoke
+// it finds there every 500 ms, which silently destroyed every error Shipyard
 // printed while any run was in flight.
 function write(line: string): void {
   writeLogLine(line);
@@ -561,7 +561,7 @@ function buildProjectConfig(
     // A store left at the pre-rename default location is moved once so the
     // planner keeps its phase history (see buildLegacySessionStorePath).
     if (migrateLegacySessionStore(sessionStorePath, buildLegacySessionStorePath(owner, repo))) {
-      console.log(`[yoke] Moved the ${owner}/${repo} session store to ${sessionStorePath}.`);
+      console.log(`[shipyard] Moved the ${owner}/${repo} session store to ${sessionStorePath}.`);
     }
   }
 
@@ -769,7 +769,7 @@ async function runCheckoutMaintenance(
   }
   if (report.ownClones.length > 0) {
     bullet(
-      `kept ${report.ownClones.length} standalone clone(s) from an older yoke — their branches are their own: ` +
+      `kept ${report.ownClones.length} standalone clone(s) from an older Shipyard — their branches are their own: ` +
         report.ownClones.map((dir) => path.basename(dir)).join(", "),
     );
   }
@@ -1399,7 +1399,7 @@ async function runEngine(
         failure(`Engine ${engineIndex + 1}: cycle failed — continuing.\n${detail}`, 1);
       } catch {
         // Logging must never be the thing that kills the engine.
-        process.stderr.write(`[yoke] Engine ${engineIndex + 1} cycle failed: ${detail}\n`);
+        process.stderr.write(`[shipyard] Engine ${engineIndex + 1} cycle failed: ${detail}\n`);
       }
       if (isOnceMode) return;
       await delay(5000);
@@ -1472,7 +1472,7 @@ async function main(): Promise<void> {
   if (!authResult.valid) {
     console.error(`\nError: Claude authentication is invalid or expired.`);
     console.error(`Please run:  claude auth login`);
-    console.error(`Then restart yoke.\n`);
+    console.error(`Then restart Shipyard.\n`);
     process.exit(1);
   }
 
@@ -1534,7 +1534,7 @@ async function main(): Promise<void> {
       token: githubToken,
       apiBaseUrl: envConfig.github_api_base_url ?? "https://api.github.com",
       apiVersion: envConfig.github_api_version ?? "2022-11-28",
-      userAgent: "yoke",
+      userAgent: "Shipyard",
       eventEmitter: emitter,
     });
     const gitHubClient = new GitHubClient({ owner: config.owner, repo: config.repo, gateway: githubGateway });
@@ -1623,7 +1623,7 @@ async function main(): Promise<void> {
 
   // ── Banner ────────────────────────────────────────────────────────────────
   write(HEAVY_RULE);
-  write(`yoke starting · ${timestamp()}`);
+  write(`Shipyard starting · ${timestamp()}`);
   write(`projects (${contexts.length}): ${contexts.map((c) => `${c.repoKey} [cap ${c.cap}]`).join(", ")}`);
   if (dashboardReady) {
     write(`dashboard: ${dashboard.getUrl()}${noBrowser ? " (browser launch suppressed)" : ""}`);
@@ -1660,13 +1660,13 @@ async function main(): Promise<void> {
   );
   write(HEAVY_RULE);
 
-  // ── Agent scratch left by a yoke that did not get to clean up ─────────────
+  // ── Agent scratch left by a Shipyard that did not get to clean up ─────────────
   // Each Claude run's TMPDIR is removed when the run ends; one that was still
-  // running when its yoke crashed or was killed is removed here instead.
+  // running when its Shipyard crashed or was killed is removed here instead.
   try {
     const swept = await sweepOrphanedRunTempDirs();
     if (swept.length > 0) {
-      write(`removed ${swept.length} agent scratch dir(s) left in ${defaultRunTempRootDir()} by a yoke that is no longer running`);
+      write(`removed ${swept.length} agent scratch dir(s) left in ${defaultRunTempRootDir()} by a Shipyard that is no longer running`);
     }
   } catch (error) {
     write(`could not sweep ${defaultRunTempRootDir()}: ${error instanceof Error ? error.message : String(error)}`);
@@ -1681,7 +1681,7 @@ async function main(): Promise<void> {
       await ctx.gitHubClient.ensureLabelExists(
         "manual",
         "e0e0e0",
-        "Prevents yoke from automatically picking up this issue",
+        "Prevents Shipyard from automatically picking up this issue",
       );
       bullet("\"manual\" label is present");
     } catch (error) {
@@ -1692,7 +1692,7 @@ async function main(): Promise<void> {
       await ctx.gitHubClient.ensureLabelExists(
         REVIEW_LABEL,
         "d93f0b",
-        "Yoke implements this issue but leaves the final PR for human review",
+        "Shipyard implements this issue but leaves the final PR for human review",
       );
       bullet(`"${REVIEW_LABEL}" label is present`);
     } catch (error) {
@@ -1704,7 +1704,7 @@ async function main(): Promise<void> {
         await ctx.gitHubClient.ensureLabelExists(
           FOCUS_LABEL,
           "0075ca",
-          "Yoke will only work on issues with this label in focus mode",
+          "Shipyard will only work on issues with this label in focus mode",
         );
         bullet(`"${FOCUS_LABEL}" label is present`);
       } catch (error) {

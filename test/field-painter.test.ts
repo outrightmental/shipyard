@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { YokeField } from "../src/dashboard/components/yoke-field.js";
+import { ShipyardField } from "../src/dashboard/components/shipyard-field.js";
 import { Animator, PING_MS } from "../src/dashboard/field/animator.js";
 import { eyeOpenness, glyphMoves, trackMarkX, trackWidth } from "../src/dashboard/field/glyphs.js";
 import { layoutField, type FieldLayout, type Viewport } from "../src/dashboard/field/layout.js";
@@ -134,7 +134,7 @@ test("the animator: a piece of work whose state changes moves to its new place, 
   assert.equal(before.node.kind === "work" && before.node.level, "queued");
 
   // Its checks pass, its self-review is clean, and it is parked for approval:
-  // it is no longer yoke's to work next, so it sinks a stratum.
+  // it is no longer Shipyard's to work next, so it sinks a stratum.
   const parked = stateWith(
     state.lastLifecyclePairs.map((pair) =>
       pair.issue?.number === 8
@@ -297,7 +297,7 @@ test("the painter: the reactors are headed by how many engines burn, and each pr
   assert.ok(two.texts.indexOf("ATLAS") < two.texts.indexOf("LEDGER"), "in the order of their names");
 
   const dark = paint(busyState({ shutdownRequested: true }));
-  assert.ok(dark.texts.includes("nothing coming — yoke is shutting down"), "once yoke is shutting down, that is what a project's heading says");
+  assert.ok(dark.texts.includes("nothing coming — Shipyard is shutting down"), "once Shipyard is shutting down, that is what a project's heading says");
 });
 
 test("the painter: a line of work is its number, its title, and where it stands", () => {
@@ -651,7 +651,7 @@ test("the painter: the last lines of the log run along the bottom, each in its e
 
 test("the painter: with no work to draw it says so, and still draws the instruments", () => {
   const painted = paint({ ...initialState(), title: "Outright Mental" });
-  assert.ok(painted.texts.includes("Connecting to yoke…"));
+  assert.ok(painted.texts.includes("Connecting to Shipyard…"));
   assert.ok(painted.texts.includes("OUTRIGHT MENTAL"));
   assert.ok(painted.texts.includes("CLAUDE"), "the usage gauge, which names no window until it has read one");
 });
@@ -769,7 +769,7 @@ test("the track's marks are evenly set, and only the marks that move are redrawn
 // ── the same picture, as markup ──────────────────────────────────────────────
 
 test("the field renders everything it paints as markup too, for a screen reader and the keyboard", () => {
-  const field = new YokeField();
+  const field = new ShipyardField();
   field.model = fieldModel({ ...busyState(), title: "Outright Mental", owner: "o", repo: "a" }, NOW);
   const html = flatten(field.render()).replace(/\s+/g, " ");
 
@@ -794,11 +794,11 @@ test("the field renders everything it paints as markup too, for a screen reader 
 });
 
 test("the field's markup says a hold and a shutdown in words", () => {
-  const field = new YokeField();
+  const field = new ShipyardField();
   field.model = fieldModel({ ...busyState(), hold: { kind: "claude-usage-limit", reason: "Claude usage limit", untilMs: NOW + 3_600_000 }, shutdownRequested: true }, NOW);
   const html = flatten(field.render()).replace(/\s+/g, " ");
   assert.match(html, /role="status"> Waiting <span class="hold-duration">1h 0m<\/span> until <span class="hold-deadline">[^<]+<\/span> for Claude usage limit · no work is planned or started until then/);
-  assert.match(html, /Yoke is shutting down\./);
+  assert.match(html, /Shipyard is shutting down\./);
 
   field.model = null;
   assert.ok(!flatten(field.render()).includes("field-mirror"), "before the first state there is only the canvas");

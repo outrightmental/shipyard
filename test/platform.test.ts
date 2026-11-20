@@ -1046,7 +1046,7 @@ test("an unassigned repository is read lightly: two listings, never a request pe
   ];
   const pulls = [{
     number: 900, title: "Do the first thing", body: "Closes #1", created_at: "2026-11-03T00:00:00Z", updated_at: "2026-11-03T00:00:00Z",
-    draft: true, labels: [], head: { sha: "abc", ref: "yoke/issue-1" }, base: { ref: "main" },
+    draft: true, labels: [], head: { sha: "abc", ref: "shipyard/issue-1" }, base: { ref: "main" },
   }];
   t.onFetch((url) => {
     const page = Number(new URL(url).searchParams.get("page"));

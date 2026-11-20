@@ -8,7 +8,7 @@ import {
   localizeClockTimes,
 } from "../src/dashboard/shared/format.js";
 import type { BroadcastEventData, EventLine } from "../src/dashboard/store/types.js";
-import { YokeField } from "../src/dashboard/components/yoke-field.js";
+import { ShipyardField } from "../src/dashboard/components/shipyard-field.js";
 import { EventStream } from "../src/dashboard/components/event-stream.js";
 import { BroadcastEventCard } from "../src/dashboard/components/broadcast-event-card.js";
 import { fieldModel } from "../src/dashboard/field/model.js";
@@ -148,7 +148,7 @@ test("the hold on the field: the deadline reads in the viewer's time zone", () =
       // Painted on the canvas, in capitals like the rest of the line…
       assert.ok(paintField(state).texts.includes(deadline.toUpperCase()), `${zone}: painted`);
       // …said to a screen reader, as the same words…
-      const field = new YokeField();
+      const field = new ShipyardField();
       field.model = fieldModel(state, Date.now());
       assert.ok(flatten(field.render()).includes(`<span class="hold-deadline">${deadline}</span>`), `${zone}: in the markup`);
       // …and said again in full by the card a tap on it opens.

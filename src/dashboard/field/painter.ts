@@ -1,4 +1,5 @@
 import type { SystemGauge } from '../shared/system-view.js';
+import { shutdownHudLabel, shutdownNote } from '../shared/vitals.js';
 import { briefStatus, STAGES, workGlyph, type WorkSignal, type WorkStatus, type WorkView } from '../shared/work-view.js';
 import { PING_MS, type Ping, type PlacedNode } from './animator.js';
 import { inflate, rect, type Point, type Rect } from './geometry.js';
@@ -724,7 +725,7 @@ export class Painter {
     let note: string;
     if (node.heads === 'burning') {
       if (vitals.phase === 'shut-down') note = 'Shipyard has shut down';
-      else if (vitals.phase === 'shutting-down') note = 'finishing what is in flight, then stopping';
+      else if (vitals.phase === 'shutting-down') note = shutdownNote(vitals.shutdownReason);
       else if (vitals.hold) note = 'every engine is parked';
       else if (node.count === 0) note = 'no engine is running an action';
       else note = node.count === 1 ? 'an engine is running an action' : 'engines are running actions';
@@ -1026,7 +1027,7 @@ export class Painter {
       case 'state': {
         const down = vitals.phase !== 'running';
         const text = vitals.phase === 'shut-down' ? 'SHUT DOWN'
-          : vitals.phase === 'shutting-down' ? 'STOPPING'
+          : vitals.phase === 'shutting-down' ? shutdownHudLabel(vitals.shutdownReason)
             : vitals.connection === 'disconnected' ? 'LOST' : 'CONNECTING';
         const color = down ? p.orange : vitals.connection === 'disconnected' ? p.red : p.trimDim;
         label(down ? 'SHIPYARD' : 'CONNECTION', x, rgba(color, 0.95));

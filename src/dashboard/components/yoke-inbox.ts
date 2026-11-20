@@ -31,6 +31,7 @@ export class YokeInbox extends LitElement {
     open: { type: Boolean },
     overlay: { type: Boolean },
     logOpen: { type: Boolean },
+    readOnly: { type: Boolean },
   };
 
   /** The cards, top to bottom (`buildInbox`). */
@@ -45,6 +46,10 @@ export class YokeInbox extends LitElement {
   /** Whether the open rail lies over the field, as on a narrow screen, rather than beside it. */
   overlay = false;
   logOpen = false;
+  /** A screen that takes no decisions (a fleet member's read-only dashboard).
+   *  The scroll-to-top on a newly queued approval is for the main console only
+   *  (#18); a read-only viewer's column is never moved out from under them. */
+  readOnly = false;
 
   /** Where each card sat when last drawn, and until when its button is deaf. */
   private _tops = new Map<string, number>();
@@ -72,7 +77,7 @@ export class YokeInbox extends LitElement {
     this._reportAnchors();
     if (changed.has('selectedCardId') && this.selectedCardId) this._reveal(this.selectedCardId);
     if (changed.has('cards')) {
-      if (hasNewQueuedApproval(this._prevCardIds, this.cards)) this._scrollToTop();
+      if (!this.readOnly && hasNewQueuedApproval(this._prevCardIds, this.cards)) this._scrollToTop();
       this._prevCardIds = new Set(this.cards.map((c) => c.id));
     }
   }
@@ -95,10 +100,12 @@ export class YokeInbox extends LitElement {
   }
 
   /** Scroll the list to the top so a newly pinned card is immediately visible.
-   *  Only the list scrolls — the page itself must never move. */
+   *  Only the list scrolls — the page itself must never move. The jump is
+   *  instant, not animated (#18): a card one press away from merging a pull
+   *  request must be under the eye at once, not slid up to over a moment. */
   private _scrollToTop() {
     const list = this.querySelector<HTMLElement>('.inbox-list');
-    if (list && list.scrollTop > 0) list.scrollTo({ top: 0, behavior: 'smooth' });
+    if (list && list.scrollTop > 0) list.scrollTo({ top: 0, behavior: 'instant' });
   }
 
   /** Make the button of every card that has just arrived or moved deaf for a moment. */

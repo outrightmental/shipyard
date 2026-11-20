@@ -4,6 +4,7 @@ import {
   type ConsolePush,
   type ConsoleSend,
   type ConsoleState,
+  type EngineDefaults,
   type FleetMember,
   type GitHubStatus,
   type SubscribedRepo,
@@ -52,6 +53,8 @@ export interface ConsoleView {
   members: FleetMember[];
   repos: SubscribedRepo[];
   github: GitHubStatus;
+  /** Platform-wide engine defaults, editable from the console. */
+  engineDefaults: EngineDefaults;
   /** How far this browser's clock is ahead of the platform's, in millis:
    *  "offline" is judged by the platform's clock, whatever this machine's says. */
   clockSkewMs: number;
@@ -70,7 +73,7 @@ type Listener<T> = (value: T) => void;
 export class FleetStore implements DashboardSource {
   private _view: ConsoleView = {
     loaded: false, error: null, connection: 'connecting', release: null, operatorEmail: null,
-    members: [], repos: [], github: NO_GITHUB, clockSkewMs: 0,
+    members: [], repos: [], github: NO_GITHUB, engineDefaults: {}, clockSkewMs: 0,
   };
   private _states = new Map<string, DashboardState>();
   private _sum: DashboardState = { ...initialState(), fleet: [], brand: 'Shipyard', title: 'Shipyard', multiProject: true };
@@ -290,6 +293,7 @@ export class FleetStore implements DashboardSource {
         members: state.members,
         repos: state.repos,
         github: state.github,
+        engineDefaults: state.engineDefaults ?? {},
         clockSkewMs: Date.now() - state.serverTimeMs,
       });
     } catch (error) {

@@ -204,6 +204,67 @@ test("a member's socket is poked when its configuration changes", async () => {
   assert.deepEqual(pushedTo(t, "member-1"), [{ t: "poke" }]);
 });
 
+test("platform engine defaults are stored and returned, and flow through to member config", async () => {
+  const t = testPlatform();
+  const atlas = await enrollMachine(t, "atlas");
+
+  // No defaults yet.
+  const empty = (await state(t)).engineDefaults;
+  assert.deepEqual(empty, {});
+  const noDefaults = await configOf(t, atlas.token);
+  assert.deepEqual(noDefaults.engineDefaults, {});
+
+  // Set platform defaults.
+  const res = await call(t, "PUT", "/api/engine-defaults", { initialModel: "claude-sonnet-5-5", reviewModel: "claude-opus-5-5", initialEffort: "xhigh", reviewEffort: "medium" });
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body["engineDefaults"], { initialModel: "claude-sonnet-5-5", reviewModel: "claude-opus-5-5", initialEffort: "xhigh", reviewEffort: "medium" });
+
+  // ConsoleState reflects the defaults.
+  const withDefaults = (await state(t)).engineDefaults;
+  assert.deepEqual(withDefaults, { initialModel: "claude-sonnet-5-5", reviewModel: "claude-opus-5-5", initialEffort: "xhigh", reviewEffort: "medium" });
+
+  // Member config reflects the defaults.
+  const memberWithDefaults = await configOf(t, atlas.token);
+  assert.deepEqual(memberWithDefaults.engineDefaults, { initialModel: "claude-sonnet-5-5", reviewModel: "claude-opus-5-5", initialEffort: "xhigh", reviewEffort: "medium" });
+
+  // Changing engine defaults bumps the member's config version and pokes it.
+  assert.ok(await connect(t, "member-socket", { memberToken: atlas.token }));
+  const beforeVersion = memberWithDefaults.configVersion;
+  await call(t, "PUT", "/api/engine-defaults", { initialModel: "claude-opus-5-5" });
+  const afterConfig = await configOf(t, atlas.token);
+  assert.notEqual(afterConfig.configVersion, beforeVersion, "config version changes when engine defaults change");
+  assert.ok(pushedTo(t, "member-socket").some((m) => m["t"] === "poke"), "member is poked on engine default change");
+
+  // Invalid model names and effort levels are ignored.
+  const invalid = await call(t, "PUT", "/api/engine-defaults", { initialModel: "not-a-model", initialEffort: "ultra", reviewModel: "claude-opus-5-5" });
+  assert.equal(invalid.status, 200);
+  assert.deepEqual(invalid.body["engineDefaults"], { reviewModel: "claude-opus-5-5" }, "invalid fields are silently dropped");
+});
+
+test("per-repository model and effort overrides flow through to member config", async () => {
+  const t = testPlatform();
+  const atlas = await enrollMachine(t, "atlas");
+
+  await call(t, "PUT", "/api/repos/acme/widgets", {
+    memberId: atlas.memberId,
+    settings: { maxConcurrency: 2, initialModel: "claude-haiku-5-5", reviewEffort: "low", focusMode: true },
+  });
+  const config = await configOf(t, atlas.token);
+  assert.deepEqual(config.repos, [{
+    repo: "acme/widgets", maxConcurrency: 2, initialModel: "claude-haiku-5-5", reviewEffort: "low", focusMode: true,
+  }]);
+
+  // Settings are shown in ConsoleState.repos too.
+  const s = (await state(t)).repos.find((r) => r.repo === "acme/widgets")!;
+  assert.equal(s.settings.initialModel, "claude-haiku-5-5");
+  assert.equal(s.settings.reviewEffort, "low");
+
+  // Invalid effort or model are silently dropped.
+  const ignored = await call(t, "PUT", "/api/repos/acme/widgets", { settings: { initialModel: "not-claude", reviewEffort: "ultra" } });
+  assert.equal(ignored.status, 200);
+  assert.deepEqual(ignored.body["repo"]["settings"], {}, "invalid overrides are dropped");
+});
+
 // ── Repositories ─────────────────────────────────────────────────────────────
 
 test("a repository is subscribed unassigned, and assigned to at most one member", async () => {

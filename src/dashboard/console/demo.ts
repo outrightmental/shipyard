@@ -148,7 +148,7 @@ const states = new Map<string, DashboardState>([
 
 const view: ConsoleView = {
   loaded: true, error: null, connection: 'connected', release: '4e270b0aa1b2c3d4e5f60718293a4b5c6d7e8f90',
-  operatorEmail: 'operator@example.com', members: MEMBERS, repos: REPOS, github: GITHUB, clockSkewMs: 0,
+  operatorEmail: 'operator@example.com', members: MEMBERS, repos: REPOS, github: GITHUB, engineDefaults: {}, clockSkewMs: 0,
 };
 
 const sum = (): DashboardState => sumFleet({ fleet: view, states, connection: 'connected', nowMs: Date.now() });

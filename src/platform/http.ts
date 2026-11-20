@@ -2,16 +2,20 @@ import { CENTRAL_MEMBER_ID, type ConsolePush, type ConsoleState, type MemberAck 
 import {
   activeMembers,
   authenticateMember,
+  cleanEngineDefaults,
   createEnrollCode,
   enroll,
+  getEngineDefaults,
   listConnections,
   listMemberRows,
   listRepoRows,
   memberConfig,
   memberView,
+  putEngineDefaults,
   pushToConsoles,
   pushToMember,
   recordMemberReport,
+  refreshConfigVersion,
   repoView,
   retireMember,
   updateMember,
@@ -112,8 +116,8 @@ async function route(p: Platform, request: HttpRequest): Promise<HttpResponse> {
 // ── The console ──────────────────────────────────────────────────────────────
 
 async function consoleState(p: Platform, operator: Operator): Promise<ConsoleState> {
-  const [memberRows, repoRows, connections, github] = await Promise.all([
-    listMemberRows(p), listRepoRows(p), listConnections(p), githubStatus(p),
+  const [memberRows, repoRows, connections, github, engineDefaults] = await Promise.all([
+    listMemberRows(p), listRepoRows(p), listConnections(p), githubStatus(p), getEngineDefaults(p),
   ]);
   const active = activeMembers(memberRows);
   const ids = [...active.map((member) => member.id), CENTRAL_MEMBER_ID];
@@ -127,6 +131,7 @@ async function consoleState(p: Platform, operator: Operator): Promise<ConsoleSta
     members: active.map((member) => memberView(member, repoRows, connections)),
     repos: repoRows.map(repoView).sort((a, b) => (a.repo.toLowerCase() < b.repo.toLowerCase() ? -1 : 1)),
     github,
+    engineDefaults,
     cached,
   };
 }
@@ -183,6 +188,22 @@ async function consoleRoute(p: Platform, request: HttpRequest, path: string): Pr
     return ok({ github: await githubStatus(p) });
   }
   if (path === "/github/repositories" && method === "GET") return ok({ available: await listAvailableRepos(p) });
+
+  // ── Engine defaults ──
+  if (path === "/engine-defaults" && method === "GET") {
+    return ok({ engineDefaults: await getEngineDefaults(p) });
+  }
+  if (path === "/engine-defaults" && method === "PUT") {
+    const saved = await putEngineDefaults(p, cleanEngineDefaults(parseBody(request)));
+    const members = await listMemberRows(p);
+    await Promise.all(
+      members
+        .filter((m) => m.status === "active")
+        .map(async (m) => { await refreshConfigVersion(p, m.id); await pushToMember(p, m.id, { t: "poke" }); }),
+    );
+    await pushToConsoles(p, { t: "changed" });
+    return ok({ engineDefaults: saved });
+  }
 
   // ── Repositories ──
   const repo = /^\/repos\/([^/]+)\/([^/]+)$/.exec(path);

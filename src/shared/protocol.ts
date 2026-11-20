@@ -70,6 +70,20 @@ export interface FleetMember {
   connected: boolean;
 }
 
+/** Platform-wide engine model and effort defaults, editable from the console. */
+export interface EngineDefaults {
+  /** Override the default initial-implementation model platform-wide. */
+  initialModel?: string;
+  /** Override the default review model platform-wide. */
+  reviewModel?: string;
+  /** Override the default initial-implementation effort platform-wide. */
+  initialEffort?: string;
+  /** Override the default review effort platform-wide. */
+  reviewEffort?: string;
+  /** Override the default PR-description model platform-wide. */
+  describeModel?: string;
+}
+
 /** Per-repository settings a member applies to its work on it. All optional: Shipyard's defaults otherwise. */
 export interface RepoSettings {
   /** How many of the member's engines may work this repository at once. */
@@ -82,6 +96,16 @@ export interface RepoSettings {
   focusMode?: boolean;
   /** Minutes a PR's checks may run before the unfinished ones count as stalled and are cancelled (default 60). */
   checksTimeoutMinutes?: number;
+  /** Override the initial-implementation model for this repository. */
+  initialModel?: string;
+  /** Override the review model for this repository. */
+  reviewModel?: string;
+  /** Override the initial-implementation effort for this repository. */
+  initialEffort?: string;
+  /** Override the review effort for this repository. */
+  reviewEffort?: string;
+  /** Override the PR-description model for this repository. */
+  describeModel?: string;
 }
 
 /** A repository Shipyard is subscribed to. */
@@ -125,6 +149,8 @@ export interface MemberConfig {
   configVersion: string;
   maxConcurrency: number;
   repos: Array<{ repo: string } & RepoSettings>;
+  /** Platform-wide engine defaults; per-repo settings override these, machine settings override those. */
+  engineDefaults: EngineDefaults;
   /** Whether Shipyard can mint this member a GitHub token at all. */
   github: { ready: boolean };
   /**
@@ -151,6 +177,8 @@ export interface ConsoleState {
   members: FleetMember[];
   repos: SubscribedRepo[];
   github: GitHubStatus;
+  /** Platform-wide engine defaults, editable from the console. */
+  engineDefaults: EngineDefaults;
   /** Each member's replayable events, by member id. */
   cached: Record<string, WireEvent[]>;
 }

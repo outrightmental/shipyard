@@ -49,9 +49,17 @@ function fakeGithub(minted: Array<{ repositories?: string[] }>): typeof fetch {
       if (body.repositories?.includes(FORMER_NAME)) {
         return answer({ message: "There is at least one repository that does not exist or is not accessible to the parent installation." }, 422);
       }
+      // A token for every repository of the installation's is asked for only to find out which one that was.
+      if (body.repositories === undefined) return answer({ token: "ghs_to_look_with", expires_at: new Date(Date.now() + 3_600_000).toISOString() }, 201);
       minted.push(body);
       return answer({ token: `ghs_token_${minted.length}`, expires_at: new Date(Date.now() + 3_600_000).toISOString() }, 201);
     }
+    if (url.includes("/installation/repositories")) {
+      const repo = (name: string) => ({ full_name: `acme/${name}`, private: true, archived: false, description: null, default_branch: "main", html_url: `https://github.com/acme/${name}` });
+      return answer({ repositories: [repo("widgets"), repo("gadgets")] });
+    }
+    // The name it was renamed from answers a read, as the repository it now is.
+    if (url.endsWith(`/repos/acme/${FORMER_NAME}`)) return answer({ full_name: "acme/widgets" });
     return answer({ message: "Not Found" }, 404);
   }) as typeof fetch;
 }
@@ -642,7 +650,8 @@ test("a member refused a token for a repository says so only for as long as that
   await until("the refusal to be said", async () => (await notes()).length === 1);
   const [note] = await notes();
   assert.equal(note?.code, NOTE_GITHUB);
-  assert.match(note?.message ?? "", /^no GitHub token: GitHub would not mint a token \(422\)/);
+  // Said with the repository it is about, and what to call it: GitHub's own words name neither.
+  assert.equal(note?.message, `no GitHub token: GitHub would not mint a token: acme/${FORMER_NAME} is called acme/widgets now`);
   assert.equal(member.tokens.current(), "ghs_token_1", "and goes on working what it could already reach");
 
   // Taken away again, well inside the hour the token in hand lasts.

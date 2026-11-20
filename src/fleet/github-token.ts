@@ -58,6 +58,18 @@ export class GitHubTokenKeeper {
    * a new one if not. With no repositories there is nothing to mint a token
    * for, and none is asked for. Never throws: a token that could not be had
    * is said through `onProblem`, and tried again at the next check.
+   *
+   * A token in hand that reaches all of them is the end of any such problem,
+   * and is said to be, whether or not it was just minted. It was only a
+   * minted one that said so. On 2026-11-20 a member working four repositories
+   * was assigned a fifth, by a name that repository had been renamed from;
+   * GitHub mints nothing for a list with a name it does not know in it, and
+   * the member said so. The fifth was taken away within the minute. The token
+   * in hand reached the four that were left, so nothing more was asked of
+   * GitHub, no answer of its came to say the trouble was over, and the member
+   * stood in the console as needing attention, with a refusal for a
+   * repository it no longer had, while it worked the others without fault —
+   * until the token came up for renewal, most of an hour later.
    */
   async ensure(repos: readonly string[]): Promise<boolean> {
     if (repos.length === 0) {
@@ -65,10 +77,13 @@ export class GitHubTokenKeeper {
       this.onProblem(null);
       return true;
     }
-    if (this.covers(repos)) return true;
-    this.renewing ??= this.renew().finally(() => { this.renewing = null; });
-    await this.renewing;
-    return this.covers(repos);
+    if (!this.covers(repos)) {
+      this.renewing ??= this.renew().finally(() => { this.renewing = null; });
+      await this.renewing;
+    }
+    const covered = this.covers(repos);
+    if (covered) this.onProblem(null);
+    return covered;
   }
 
   private async renew(): Promise<void> {

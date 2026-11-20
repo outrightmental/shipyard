@@ -2,7 +2,7 @@ import { LitElement, html } from 'lit';
 import { repeat } from 'lit/directives/repeat.js';
 import type { Point } from '../field/geometry.js';
 import { INSPECTOR_CARD_ID } from '../field/model.js';
-import { cardsToShield, type InboxAction, type InboxCard, type InboxLink, type Inspection } from '../shared/inbox.js';
+import { cardsToShield, hasNewQueuedApproval, type InboxAction, type InboxCard, type InboxLink, type Inspection } from '../shared/inbox.js';
 import type { ApproveTarget } from '../shared/pill-approval.js';
 
 /**
@@ -51,6 +51,8 @@ export class YokeInbox extends LitElement {
   private _shieldUntil = new Map<string, number>();
   private _anchorsKey = '';
   private _resizeObserver: ResizeObserver | null = null;
+  /** The card ids present in the previous render, for new-pinned-card detection. */
+  private _prevCardIds = new Set<string>();
 
   protected override createRenderRoot() { return this; }
 
@@ -69,6 +71,10 @@ export class YokeInbox extends LitElement {
     this._shieldMoved();
     this._reportAnchors();
     if (changed.has('selectedCardId') && this.selectedCardId) this._reveal(this.selectedCardId);
+    if (changed.has('cards')) {
+      if (hasNewQueuedApproval(this._prevCardIds, this.cards)) this._scrollToTop();
+      this._prevCardIds = new Set(this.cards.map((c) => c.id));
+    }
   }
 
   /**
@@ -86,6 +92,13 @@ export class YokeInbox extends LitElement {
     if (top < list.scrollTop) target = top - 8;
     else if (bottom > list.scrollTop + list.clientHeight) target = bottom - list.clientHeight + 8;
     if (target !== list.scrollTop) list.scrollTo({ top: Math.max(0, target), behavior: 'smooth' });
+  }
+
+  /** Scroll the list to the top so a newly pinned card is immediately visible.
+   *  Only the list scrolls — the page itself must never move. */
+  private _scrollToTop() {
+    const list = this.querySelector<HTMLElement>('.inbox-list');
+    if (list && list.scrollTop > 0) list.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   /** Make the button of every card that has just arrived or moved deaf for a moment. */

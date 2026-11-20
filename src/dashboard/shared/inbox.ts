@@ -374,14 +374,19 @@ export interface InboxInput {
   failureShowMs: number;
 }
 
+/** Whether a card is "Approval queued" — approved and waiting for a free
+ *  engine — which pins it to the very top of the list. */
+function isPinnedCard(card: InboxCard): boolean {
+  return card.action?.type === 'approve' && card.action.step === 'queued';
+}
+
 /**
  * The inbox's cards, top to bottom.
  *
- * They are grouped by source, most pressing first, and within a source listed
- * in the order they arrived, the longest-waiting on top. So a card never moves
- * because of how it changes — an approval stays where it was pressed while it
- * reads Queued, Approving and Merged — and a new arrival lands below its
- * source's others rather than push one out from under a finger.
+ * "Approval queued" cards (an approval given, waiting for a free engine) sort
+ * above everything else regardless of source or arrival time. The existing
+ * ordering — by source rank, then arrival time, then id — applies to all other
+ * cards unchanged.
  */
 export function buildInbox(input: InboxInput): InboxCard[] {
   const { works, arrivals } = input;
@@ -397,10 +402,21 @@ export function buildInbox(input: InboxInput): InboxCard[] {
     .filter((card) => !card.dismissible || !input.dismissed.has(card.id))
     .map((card) => (input.readOnly ? readOnlyCard(card) : card));
 
+  const pinned = (card: InboxCard): 0 | 1 => isPinnedCard(card) ? 0 : 1;
   const rank = (card: InboxCard): number => INBOX_SOURCES.indexOf(card.source);
   const arrived = (card: InboxCard): number => arrivals.get(card.id) ?? Number.MAX_SAFE_INTEGER;
   return cards.sort((a, b) =>
-    rank(a) - rank(b) || arrived(a) - arrived(b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    pinned(a) - pinned(b) || rank(a) - rank(b) || arrived(a) - arrived(b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
+
+/**
+ * Whether a new "Approval queued" card has appeared in `nextCards` that was
+ * not present in the previous render (identified by `prevIds`). Used by the
+ * inbox component to decide whether to scroll the list to the top so the
+ * newly pinned card is visible.
+ */
+export function hasNewQueuedApproval(prevIds: ReadonlySet<string>, nextCards: readonly InboxCard[]): boolean {
+  return nextCards.some((card) => isPinnedCard(card) && !prevIds.has(card.id));
 }
 
 /** What an Approve button says on a screen that takes no decisions. */

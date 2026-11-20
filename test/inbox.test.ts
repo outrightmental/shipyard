@@ -8,10 +8,12 @@ import {
   buildInbox,
   cardsToShield,
   failureCardId,
+  hasNewQueuedApproval,
   INBOX_SOURCES,
   InboxLedger,
   inboxWithLedger,
   inspect,
+  type InboxCard,
   type InboxInput,
 } from "../src/dashboard/shared/inbox.js";
 import { lampReserve, RAIL_OVERLAY_BELOW, RAIL_STRIP, railLayout } from "../src/dashboard/shared/rail.js";
@@ -99,9 +101,11 @@ test("approval: a PR parked by the review label has a card, and so has every app
   ]);
   const cards = buildInbox(inputFor(state));
 
-  assert.deepEqual(cards.map((card) => card.id), ["approval:o/a#10", "approval:o/a#20"]);
-  assert.deepEqual(cards.map((card) => card.eyebrow), ["Approve to merge", "Approval queued"]);
-  assert.deepEqual(cards[0]?.action, {
+  // "Approval queued" (#20) pins to the top; idle (#10) follows.
+  assert.deepEqual(cards.map((card) => card.id), ["approval:o/a#20", "approval:o/a#10"]);
+  assert.deepEqual(cards.map((card) => card.eyebrow), ["Approval queued", "Approve to merge"]);
+  const idleCard = cards.find((c) => c.id === "approval:o/a#10")!;
+  assert.deepEqual(idleCard?.action, {
     type: "approve",
     target: { repo: "o/a", pullRequestNumber: 10 },
     step: "idle",
@@ -109,13 +113,13 @@ test("approval: a PR parked by the review label has a card, and so has every app
     disabled: false,
     hint: "Approve PR #10: yoke squash-merges it",
   });
-  assert.deepEqual(cards[0]?.links, [
+  assert.deepEqual(idleCard?.links, [
     { label: "PR #10", href: "https://github.com/o/a/pull/10" },
     { label: "Issue #1", href: "https://github.com/o/a/issues/1" },
   ]);
-  assert.deepEqual(cards[0]?.facts, ["checks passing"]);
-  assert.equal(cards[0]?.title, "PR 10", "a card is about the PR, so it goes by the PR's title");
-  assert.equal(cards[0]?.dismissible, false, "something still waiting on a person cannot be put away");
+  assert.deepEqual(idleCard?.facts, ["checks passing"]);
+  assert.equal(idleCard?.title, "PR 10", "a card is about the PR, so it goes by the PR's title");
+  assert.equal(idleCard?.dismissible, false, "something still waiting on a person cannot be put away");
 });
 
 test("review: a PR yoke has asked a person to review on GitHub has a card that opens it there", () => {
@@ -320,9 +324,11 @@ test("order: within a source the longest-waiting is on top, and a new arrival la
     ["approval:o/a#50", "approval:o/a#10", "approval:o/a#30"]);
 });
 
-test("order: a card does not move because of how it changes", () => {
+test("order: a card does not move because of how it changes (all same arrival, stays by id)", () => {
   const ledger = new InboxLedger();
   const pairs = (approved: boolean) => [parked(5, 50), approved ? ready(1, 10, { approval: "approved" }) : parked(1, 10), parked(3, 30)];
+  // All three cards arrive simultaneously so order is by id: [#10, #30, #50].
+  // #10 is both pinned (queued) and already first, so it stays at the top.
   const before = inboxWithLedger(inputFor(stateWith(pairs(false))), ledger).map((card) => card.id);
   const after = inboxWithLedger({ ...inputFor(stateWith(pairs(true))), nowMs: NOW + MINUTE }, ledger);
 
@@ -343,6 +349,102 @@ test("cards that arrive at the same moment are listed in one fixed order", () =>
   const state = stateWith([parked(3, 30), parked(1, 10), parked(2, 20)]);
   const ids = buildInbox(inputFor(state)).map((card) => card.id);
   assert.deepEqual(ids, ["approval:o/a#10", "approval:o/a#20", "approval:o/a#30"]);
+});
+
+test("order: 'Approval queued' cards pin to the top of the list, above all other sources and idle approvals", () => {
+  let state = stateWith([
+    parked(5, 50),                         // approval idle — 'Approve to merge'
+    ready(4, 40, { approval: "approved" }), // approval queued — 'Approval queued'
+    ready(3, 30, { awaitingReview: true }), // review
+    ready(2, 20, { disabled: true }),       // manual
+  ]);
+  state = withFailure(state, { type: "self-review", pullRequestNumber: 30 });
+  const cards = buildInbox(inputFor(state, { keepAwake: "blocked" }));
+
+  assert.equal(cards[0]?.eyebrow, "Approval queued", "'Approval queued' is first regardless of source rank");
+  assert.equal(cards[0]?.id, "approval:o/a#40");
+  assert.deepEqual(
+    cards.slice(1).map((c) => c.source),
+    ["keep-awake", "approval", "review", "failure", "manual"],
+    "all other cards follow in their normal source order",
+  );
+});
+
+test("order: a newly queued approval moves up from wherever it was in the arrival-ordered list", () => {
+  const ledger = new InboxLedger();
+  const build = (state: DashboardState, nowMs: number) =>
+    inboxWithLedger({ ...inputFor(state), nowMs }, ledger).map((card) => card.id);
+
+  // #50 arrives first; #10 arrives second — so #50 is on top of the idle list.
+  build(stateWith([parked(5, 50)]), NOW);
+  const before = build(stateWith([parked(1, 10), parked(5, 50)]), NOW + MINUTE);
+  assert.deepEqual(before, ["approval:o/a#50", "approval:o/a#10"], "#50 on top by arrival order");
+
+  // #10 is approved (queued): it pins to the top even though it arrived later.
+  const after = build(stateWith([ready(1, 10, { approval: "approved" }), parked(5, 50)]), NOW + 2 * MINUTE);
+  assert.deepEqual(after, ["approval:o/a#10", "approval:o/a#50"], "queued #10 jumps above idle #50");
+});
+
+test("order: multiple queued approvals sort among themselves by arrival time, then id", () => {
+  const ledger = new InboxLedger();
+  const build = (state: DashboardState, nowMs: number) =>
+    inboxWithLedger({ ...inputFor(state), nowMs }, ledger);
+
+  // Both approved at the same time (all arrive simultaneously).
+  const cards = build(
+    stateWith([ready(5, 50, { approval: "approved" }), ready(1, 10, { approval: "approved" })]),
+    NOW,
+  );
+  assert.deepEqual(cards.map((c) => c.id), ["approval:o/a#10", "approval:o/a#50"], "same arrival: sorted by id");
+  assert.ok(cards.every((c) => c.eyebrow === "Approval queued"), "both pinned");
+});
+
+// ── scroll-to-top trigger ────────────────────────────────────────────────────
+
+function queuedCard(id: string): InboxCard {
+  return {
+    id,
+    source: "approval",
+    workKey: null,
+    color: null,
+    accent: "work",
+    eyebrow: "Approval queued",
+    repo: "o/a",
+    title: "PR",
+    facts: [],
+    line: null,
+    action: { type: "approve", target: { repo: "o/a", pullRequestNumber: 1 }, step: "queued", label: "Queued", disabled: true, hint: "" },
+    links: [],
+    dismissible: false,
+  };
+}
+
+test("hasNewQueuedApproval: returns true when a queued approval card is new to the list", () => {
+  const prev = new Set(["approval:o/a#50"]);
+  assert.equal(hasNewQueuedApproval(prev, [queuedCard("approval:o/a#10")]), true, "new queued card not in prev");
+  assert.equal(hasNewQueuedApproval(prev, [queuedCard("approval:o/a#50")]), false, "queued card was already there");
+  assert.equal(hasNewQueuedApproval(new Set(), [queuedCard("approval:o/a#10")]), true, "first render with a queued card");
+  assert.equal(hasNewQueuedApproval(new Set(["approval:o/a#10"]), [queuedCard("approval:o/a#10")]), false, "already tracked");
+});
+
+test("hasNewQueuedApproval: returns false for idle approval or non-approval cards", () => {
+  const idleCard: InboxCard = {
+    id: "approval:o/a#10",
+    source: "approval",
+    workKey: null,
+    color: null,
+    accent: "work",
+    eyebrow: "Approve to merge",
+    repo: "o/a",
+    title: "PR",
+    facts: [],
+    line: null,
+    action: { type: "approve", target: { repo: "o/a", pullRequestNumber: 10 }, step: "idle", label: "Approve", disabled: false, hint: "" },
+    links: [],
+    dismissible: false,
+  };
+  assert.equal(hasNewQueuedApproval(new Set(), [idleCard]), false, "idle approval does not trigger scroll");
+  assert.equal(hasNewQueuedApproval(new Set(), []), false, "empty list does not trigger scroll");
 });
 
 // ── never under a finger ─────────────────────────────────────────────────────
@@ -491,9 +593,10 @@ test("tethers: each card about a piece of work is joined to it, saying where its
   const cards = buildInbox(inputFor(state, { keepAwake: "blocked" }));
   const model = fieldModel(state, NOW, { cards, selection: { kind: "work", key: "o/a#3" } });
 
+  // "Approval queued" (#20) is pinned to the top, so its tether comes first.
   assert.deepEqual(model.tethers, [
-    { cardId: "approval:o/a#10", workKey: "o/a#1", state: "waiting" },
     { cardId: "approval:o/a#20", workKey: "o/a#2", state: "sent" },
+    { cardId: "approval:o/a#10", workKey: "o/a#1", state: "waiting" },
     { cardId: "manual:o/a#3", workKey: "o/a#3", state: "waiting" },
   ], "the keep-awake card is about no work, and work with a card needs no second line to the inspector");
 

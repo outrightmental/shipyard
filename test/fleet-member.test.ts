@@ -438,6 +438,19 @@ test("a pool resized in Shipyard restarts the member to take the new size, once 
   assert.ok(logs.some((line) => /engine pool is now 4 \(was 6\)/.test(line)));
 });
 
+test("platform engine defaults changed in Shipyard restart the member to take the new globals", async (t) => {
+  const h = await harness(t);
+  await enroll(h);
+  const { told, logs } = await startMember(t, h);
+  await until("its socket", async () => (await h.state()).members[0]?.connected === true);
+  // Platform-wide defaults feed every project without its own override, and are
+  // baked into the engines at pool build: a change must bring the pool up afresh.
+  await h.operator("PUT", "/api/engine-defaults", { initialModel: "claude-opus-5-5" });
+  await until("it to be told", () => told.length === 1);
+  assert.deepEqual(told, [{ what: "restart", reason: "its engine defaults changed" }]);
+  assert.ok(logs.some((line) => /platform engine defaults changed/.test(line)));
+});
+
 test("a member an operator retires is told to stop, and does not come back", async (t) => {
   const h = await harness(t);
   const enrolled = await enroll(h);

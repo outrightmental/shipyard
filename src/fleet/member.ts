@@ -411,6 +411,17 @@ export class FleetMember {
       return;
     }
 
+    // Platform engine defaults feed the globals every project without its own
+    // model or effort override reads. They are baked into each engine's config
+    // when the pool is built, so — like a pool resize — a change to them is
+    // another process: restart to bring the running engines up on the new values.
+    if (JSON.stringify(before.engineDefaults ?? {}) !== JSON.stringify(next.engineDefaults ?? {})) {
+      this.current = next;
+      this.log("its platform engine defaults changed: restarting to take them.");
+      this.hooks.restart("its engine defaults changed");
+      return;
+    }
+
     const change = diffRepos(before.repos, next.repos);
     this.current = next;
     if (change.added.length === 0 && change.removed.length === 0) return;

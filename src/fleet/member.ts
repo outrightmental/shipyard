@@ -72,6 +72,11 @@ export function projectOf(repo: MemberConfig["repos"][number]): ProjectEnvConfig
     ...(repo.githubProjectNumber !== undefined ? { github_project_number: repo.githubProjectNumber } : {}),
     ...(repo.reviewers !== undefined ? { reviewers: repo.reviewers } : {}),
     ...(repo.focusMode !== undefined ? { focus_mode: repo.focusMode } : {}),
+    ...(repo.initialModel !== undefined ? { claude_code_initial_model: repo.initialModel } : {}),
+    ...(repo.reviewModel !== undefined ? { claude_code_review_model: repo.reviewModel } : {}),
+    ...(repo.initialEffort !== undefined ? { claude_code_initial_effort: repo.initialEffort } : {}),
+    ...(repo.reviewEffort !== undefined ? { claude_code_review_effort: repo.reviewEffort } : {}),
+    ...(repo.describeModel !== undefined ? { claude_describe_model: repo.describeModel } : {}),
   };
 }
 
@@ -79,9 +84,17 @@ export function projectOf(repo: MemberConfig["repos"][number]): ProjectEnvConfig
  * What a member's configuration is as the configuration Yoke's engine pool
  * reads: Shipyard's word on the pool's size and the repositories, the
  * machine's own on how its engines run.
+ *
+ * Priority (highest wins): per-repo RepoSettings → machine env.yaml → platform engineDefaults → hard defaults.
  */
 export function envConfigOf(config: MemberConfig, machine: Partial<EnvConfig>): EnvConfig {
+  const engineDefaults = config.engineDefaults ?? {};
   return {
+    ...(engineDefaults.initialModel ? { claude_code_initial_model: engineDefaults.initialModel } : {}),
+    ...(engineDefaults.reviewModel ? { claude_code_review_model: engineDefaults.reviewModel } : {}),
+    ...(engineDefaults.initialEffort ? { claude_code_initial_effort: engineDefaults.initialEffort } : {}),
+    ...(engineDefaults.reviewEffort ? { claude_code_review_effort: engineDefaults.reviewEffort } : {}),
+    ...(engineDefaults.describeModel ? { claude_describe_model: engineDefaults.describeModel } : {}),
     ...machine,
     max_concurrency: config.maxConcurrency,
     dashboard_title: config.member.name,
@@ -93,7 +106,18 @@ export function envConfigOf(config: MemberConfig, machine: Partial<EnvConfig>): 
 
 /** The settings of a project that, changed, make it a different project to the engine pool. */
 function projectKey(repo: MemberConfig["repos"][number]): string {
-  return JSON.stringify([repo.repo, repo.maxConcurrency ?? null, repo.githubProjectNumber ?? null, repo.reviewers ?? [], repo.focusMode ?? false]);
+  return JSON.stringify([
+    repo.repo,
+    repo.maxConcurrency ?? null,
+    repo.githubProjectNumber ?? null,
+    repo.reviewers ?? [],
+    repo.focusMode ?? false,
+    repo.initialModel ?? null,
+    repo.reviewModel ?? null,
+    repo.initialEffort ?? null,
+    repo.reviewEffort ?? null,
+    repo.describeModel ?? null,
+  ]);
 }
 
 /** Which repositories were added, taken away, or given other settings between two configurations. */

@@ -1,6 +1,7 @@
 import {
   CENTRAL_MEMBER_ID,
   ENROLL_CODE_MS,
+  type EngineDefaults,
   type FleetMember,
   type HostInfo,
   type MemberConfig,
@@ -29,6 +30,37 @@ const MEMBER = "MEMBER";
 const ENROLL = "ENROLL";
 const CONN = "CONN";
 const REPO = "REPO";
+const SETTINGS = "SETTINGS";
+const ENGINE_SK = "engine";
+
+const MODEL_RE = /^claude-[a-z0-9._-]{1,60}$/;
+const EFFORT_VALUES = ["low", "medium", "high", "xhigh", "max"] as const;
+
+export function cleanEngineDefaults(value: unknown): EngineDefaults {
+  if (typeof value !== "object" || value === null) return {};
+  const input = value as Record<string, unknown>;
+  const result: EngineDefaults = {};
+  const model = (v: unknown) => typeof v === "string" && MODEL_RE.test(v) ? v : undefined;
+  const effort = (v: unknown) => EFFORT_VALUES.includes(v as (typeof EFFORT_VALUES)[number]) ? (v as string) : undefined;
+  const im = model(input["initialModel"]); if (im !== undefined) result.initialModel = im;
+  const rm = model(input["reviewModel"]); if (rm !== undefined) result.reviewModel = rm;
+  const ie = effort(input["initialEffort"]); if (ie !== undefined) result.initialEffort = ie;
+  const re = effort(input["reviewEffort"]); if (re !== undefined) result.reviewEffort = re;
+  const dm = model(input["describeModel"]); if (dm !== undefined) result.describeModel = dm;
+  return result;
+}
+
+export async function getEngineDefaults(p: Platform): Promise<EngineDefaults> {
+  const row = await p.table.get(SETTINGS, ENGINE_SK);
+  if (!row) return {};
+  return cleanEngineDefaults(row);
+}
+
+export async function putEngineDefaults(p: Platform, value: EngineDefaults): Promise<EngineDefaults> {
+  const cleaned = cleanEngineDefaults(value);
+  await p.table.put({ PK: SETTINGS, SK: ENGINE_SK, ...cleaned });
+  return cleaned;
+}
 
 /**
  * How many cylinders a fleet member has until an operator says otherwise. It
@@ -263,7 +295,8 @@ export async function enroll(p: Platform, request: EnrollRequest): Promise<Enrol
     notes: [],
     boot: null,
   };
-  member.configVersion = configVersionOf(member, []);
+  const engineDefaults = await getEngineDefaults(p);
+  member.configVersion = configVersionOf(member, [], engineDefaults);
   await p.table.put(member);
   return { memberId, name, token, ...settings, reenrolled: false };
 }
@@ -288,9 +321,9 @@ export async function authenticateMember(p: Platform, bearer: string | null | un
 
 // ── A member's configuration ─────────────────────────────────────────────────
 
-function configVersionOf(member: Pick<MemberRow, "name" | "maxConcurrency">, repos: readonly RepoRow[]): string {
+function configVersionOf(member: Pick<MemberRow, "name" | "maxConcurrency">, repos: readonly RepoRow[], engineDefaults: EngineDefaults): string {
   const mine = [...repos].sort((a, b) => (a.repo < b.repo ? -1 : 1)).map((repo) => [repo.repo, repo.settings ?? {}]);
-  return sha256(JSON.stringify([member.name, member.maxConcurrency, mine])).slice(0, 16);
+  return sha256(JSON.stringify([member.name, member.maxConcurrency, mine, engineDefaults])).slice(0, 16);
 }
 
 /**
@@ -302,8 +335,11 @@ export async function refreshConfigVersion(p: Platform, memberId: string): Promi
   if (memberId === CENTRAL_MEMBER_ID) return null;
   const member = await getMember(p, memberId);
   if (!member) return null;
-  const repos = (await listRepoRows(p)).filter((repo) => repo.memberId === memberId);
-  const configVersion = configVersionOf(member, repos);
+  const [repos, engineDefaults] = await Promise.all([
+    listRepoRows(p).then((rows) => rows.filter((repo) => repo.memberId === memberId)),
+    getEngineDefaults(p),
+  ]);
+  const configVersion = configVersionOf(member, repos, engineDefaults);
   if (configVersion !== member.configVersion) await p.table.update(MEMBER, memberId, { configVersion });
   return configVersion;
 }
@@ -314,13 +350,17 @@ export async function memberConfig(
   member: MemberRow,
   github: { ready: boolean; git: { name: string; email: string } | null },
 ): Promise<MemberConfig> {
-  const repos = (await listRepoRows(p)).filter((repo) => repo.memberId === member.id);
+  const [repos, engineDefaults] = await Promise.all([
+    listRepoRows(p).then((rows) => rows.filter((repo) => repo.memberId === member.id)),
+    getEngineDefaults(p),
+  ]);
   return {
     member: { id: member.id, name: member.name },
     release: p.settings.release,
-    configVersion: configVersionOf(member, repos),
+    configVersion: configVersionOf(member, repos, engineDefaults),
     maxConcurrency: member.maxConcurrency,
     repos: repos.sort((a, b) => (a.repo < b.repo ? -1 : 1)).map((repo) => ({ repo: repo.repo, ...(repo.settings ?? {}) })),
+    engineDefaults,
     github: { ready: github.ready },
     git: github.git,
     wsUrl: p.settings.publicWs,

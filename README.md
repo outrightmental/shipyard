@@ -124,7 +124,7 @@ A fleet member is Yoke's engine pool with its orders coming from Shipyard. How i
 | --- | --- |
 | Its enrollment and token | `~/.shipyard/` (`SHIPYARD_HOME`) |
 | Its log | `~/.shipyard/fleet.log` (Linux: `journalctl --user -u shipyard-fleet -f`) |
-| Its own settings | `~/.shipyard/env.yaml`: the models its engines use, how long a run may take, how much disk to keep free, its dashboard's port. See [`fleet.env.example.yaml`](fleet.env.example.yaml). What it works on is never set here. |
+| Its own settings | `~/.shipyard/env.yaml`: the models its engines use on this machine (overriding Shipyard's platform-wide defaults), how long a run may take, how much disk to keep free, its dashboard's port. See [`fleet.env.example.yaml`](fleet.env.example.yaml). What it works on is never set here. |
 | Its checkouts and scratch | `~/.yoke/`, where Yoke has always kept them |
 | Run it by hand | `npm run fleet` |
 | Enroll it again | `npm run enroll -- --code <a new code>`: it stays the member it was, with its name and its repositories |

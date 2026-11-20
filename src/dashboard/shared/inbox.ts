@@ -403,25 +403,18 @@ export function buildInbox(input: InboxInput): InboxCard[] {
     rank(a) - rank(b) || arrived(a) - arrived(b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
-/** What an Approve button says on a screen that takes no decisions. */
-export const READ_ONLY_HINT = 'This screen shows what its fleet member is working on. Decisions are made in Shipyard.';
-
 /**
  * A card as a fleet member's own screen shows it: the same card, saying the
- * same thing, with a button that cannot be pressed. A PR waiting on an
- * approval still says so here — the machine's screen is where someone walking
- * past sees it — and says where the approval is given.
+ * same thing, with no button — decisions are made in Shipyard. A PR waiting
+ * on an approval still says so here — the machine's screen is where someone
+ * walking past sees it — with a plain notice in place of the button.
  */
 function readOnlyCard(card: InboxCard): InboxCard {
   if (card.action?.type !== 'approve') return card;
   return {
     ...card,
-    action: {
-      ...card.action,
-      disabled: true,
-      label: card.action.step === 'idle' ? 'Approve in Shipyard' : card.action.label,
-      hint: READ_ONLY_HINT,
-    },
+    action: null,
+    line: { text: 'waiting for approval', tone: 'plain' },
   };
 }
 

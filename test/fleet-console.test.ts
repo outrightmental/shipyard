@@ -21,7 +21,7 @@ import { AvailableList, repoRows } from "../src/dashboard/console/repos-page.js"
 import { noticeCounts, pageOf } from "../src/dashboard/console/shipyard-app.js";
 import { hitTest, layoutField, type HeaderNode } from "../src/dashboard/field/layout.js";
 import { fieldModel } from "../src/dashboard/field/model.js";
-import { buildInbox, inspect, READ_ONLY_HINT } from "../src/dashboard/shared/inbox.js";
+import { buildInbox, inspect } from "../src/dashboard/shared/inbox.js";
 import { formatUptime, systemView, worstTone } from "../src/dashboard/shared/system-view.js";
 import { workViews } from "../src/dashboard/shared/work-view.js";
 import { dashboardReducer, DashboardStore, FAILURE_SHOW_MS, initialState, replayState } from "../src/dashboard/store/dashboard-store.js";
@@ -348,7 +348,7 @@ test("every notice becomes a card that says what is wrong and what it stops", ()
 
 // ── A fleet member's own screen ──────────────────────────────────────────────
 
-test("a fleet member's own screen shows what is waiting, with a button that cannot be pressed and says where to press", () => {
+test("a fleet member's own screen shows what is waiting, with a notice instead of a button", () => {
   const parked = pair(1, 10, { prPhase: "review", approval: "awaiting-approval" });
   parked.pr!.draft = false;
   const state = stateWith([parked], "o/a", { readOnly: true, brand: "Shipyard" });
@@ -363,10 +363,8 @@ test("a fleet member's own screen shows what is waiting, with a button that cann
   const [shown] = buildInbox({ ...input, readOnly: true });
   assert.equal(shown?.id, open?.id, "the same card");
   assert.equal(shown?.eyebrow, "Approve to merge", "saying the same thing");
-  assert.deepEqual(
-    shown?.action?.type === "approve" ? [shown.action.label, shown.action.disabled, shown.action.hint] : null,
-    ["Approve in Shipyard", true, READ_ONLY_HINT],
-  );
+  assert.equal(shown?.action, null, "no button: decisions are made in Shipyard");
+  assert.deepEqual(shown?.line, { text: "waiting for approval", tone: "plain" }, "a plain notice in its place");
 });
 
 test("a read-only store sends no Approve press, whatever asked it to", () => {

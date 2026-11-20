@@ -34,7 +34,7 @@ import { actionVerb, STAGES, type StatusTone, type WorkView } from './work-view.
 export type InboxSource = 'fleet' | 'disk' | 'keep-awake' | 'approval' | 'review' | 'failure' | 'manual';
 
 /** The sources in the order their cards are listed, most pressing first. */
-export const INBOX_SOURCES: readonly InboxSource[] = ['fleet', 'disk', 'keep-awake', 'approval', 'review', 'failure', 'manual'];
+export const INBOX_SOURCES: readonly InboxSource[] = ['disk', 'keep-awake', 'approval', 'review', 'failure', 'manual', 'fleet'];
 
 /** The one thing a card's big button does. */
 export type InboxAction =
@@ -418,9 +418,11 @@ export function buildInbox(input: InboxInput): InboxCard[] {
 
   const pinned = (card: InboxCard): 0 | 1 => isPinnedCard(card) ? 0 : 1;
   const rank = (card: InboxCard): number => INBOX_SOURCES.indexOf(card.source);
+  // Within the fleet source, repo-unassigned cards sink below all other fleet cards.
+  const fleetSubrank = (card: InboxCard): 0 | 1 => card.id.startsWith('fleet:repo-unassigned:') ? 1 : 0;
   const arrived = (card: InboxCard): number => arrivals.get(card.id) ?? Number.MAX_SAFE_INTEGER;
   return cards.sort((a, b) =>
-    pinned(a) - pinned(b) || rank(a) - rank(b) || arrived(a) - arrived(b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    pinned(a) - pinned(b) || rank(a) - rank(b) || fleetSubrank(a) - fleetSubrank(b) || arrived(a) - arrived(b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
 /**

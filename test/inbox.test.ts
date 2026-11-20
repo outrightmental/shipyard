@@ -90,7 +90,7 @@ function withFailure(
 // ── the sources ──────────────────────────────────────────────────────────────
 
 test("the inbox lists its sources in one order, the most pressing first", () => {
-  assert.deepEqual([...INBOX_SOURCES], ["fleet", "disk", "keep-awake", "approval", "review", "failure", "manual"]);
+  assert.deepEqual([...INBOX_SOURCES], ["disk", "keep-awake", "approval", "review", "failure", "manual", "fleet"]);
 });
 
 test("approval: a PR parked by the review label has a card, and so has every approval under way", () => {
@@ -304,9 +304,32 @@ test("order: by source, most pressing first", () => {
     parked(2, 20),
   ]);
   state = withFailure(state, { type: "self-review", pullRequestNumber: 30 });
-  const cards = buildInbox(inputFor(state, { keepAwake: "blocked" }));
+  const fleetNotices: import("../src/dashboard/store/types.js").FleetNoticeCard[] = [
+    { id: "no-fleet", accent: "warning", eyebrow: "No fleet", title: "No active members", repo: "", facts: [], line: "add a member", action: null },
+    { id: "repo-unassigned:o/a", accent: "warning", eyebrow: "Unassigned", title: "o/a is unassigned", repo: "o/a", facts: [], line: "assign it", action: null },
+  ];
+  const cards = buildInbox(inputFor(state, { keepAwake: "blocked", notices: fleetNotices }));
 
-  assert.deepEqual(cards.map((card) => card.source), ["keep-awake", "approval", "review", "failure", "manual"]);
+  assert.deepEqual(cards.map((card) => card.source), ["keep-awake", "approval", "review", "failure", "manual", "fleet", "fleet"]);
+});
+
+test("order: fleet cards sink below all non-fleet cards; repo-unassigned cards sink below other fleet cards", () => {
+  const fleetNotices: import("../src/dashboard/store/types.js").FleetNoticeCard[] = [
+    { id: "repo-unassigned:o/b", accent: "warning", eyebrow: "Unassigned", title: "o/b is unassigned", repo: "o/b", facts: [], line: "assign it", action: null },
+    { id: "repo-unassigned:o/a", accent: "warning", eyebrow: "Unassigned", title: "o/a is unassigned", repo: "o/a", facts: [], line: "assign it", action: null },
+    { id: "member-offline:m1", accent: "alarm", eyebrow: "Offline", title: "Alice is offline", repo: "", facts: [], line: "check on them", action: null },
+    { id: "no-fleet", accent: "warning", eyebrow: "No fleet", title: "No active members", repo: "", facts: [], line: "add a member", action: null },
+  ];
+  const cards = buildInbox(inputFor(stateWith([parked(1, 10)]), { notices: fleetNotices }));
+
+  // approval first, then fleet non-repo-unassigned, then fleet repo-unassigned
+  assert.deepEqual(cards.map((c) => c.id), [
+    "approval:o/a#10",
+    "fleet:member-offline:m1",
+    "fleet:no-fleet",
+    "fleet:repo-unassigned:o/a",
+    "fleet:repo-unassigned:o/b",
+  ]);
 });
 
 test("order: within a source the longest-waiting is on top, and a new arrival lands below the others", () => {

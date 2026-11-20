@@ -199,7 +199,7 @@ export class FleetStore implements DashboardSource {
   }
 
   private _onPush(push: ConsolePush): void {
-    if (this._held !== null && (push.t === 'events' || push.t === 'member-reset')) {
+    if (this._held !== null && (push.t === 'events' || push.t === 'member-reset' || push.t === 'seen')) {
       this._held.push(push);
       return;
     }
@@ -207,6 +207,9 @@ export class FleetStore implements DashboardSource {
       case 'events':
         this._apply(push.member, push.events);
         this._resum();
+        return;
+      case 'seen':
+        this._seen(push.member, push.at);
         return;
       case 'member-reset':
         this._resetProcess(push.member);
@@ -219,6 +222,30 @@ export class FleetStore implements DashboardSource {
       case 'pong':
         return;
     }
+  }
+
+  /**
+   * The platform heard from a member. "Offline" is worked out here, from when
+   * each member was last heard from and the clock, and the fleet is read again
+   * only when something about it changes — which a member at work does not.
+   * So this is what keeps a member that is there from being called offline
+   * for the console's not having asked: its copy of when is brought forward,
+   * and never back, by what arrives out of order.
+   */
+  private _seen(memberId: string, at: string): void {
+    const atMs = Date.parse(at);
+    if (!Number.isFinite(atMs)) return;
+    let moved = false;
+    const members = this._view.members.map((member) => {
+      if (member.id !== memberId) return member;
+      const hadMs = member.lastSeenAt === null ? NaN : Date.parse(member.lastSeenAt);
+      if (hadMs >= atMs) return member;
+      moved = true;
+      return { ...member, lastSeenAt: at };
+    });
+    if (!moved) return;
+    this._setView({ ...this._view, members });
+    this._resum();
   }
 
   private _refreshSoon(): void {

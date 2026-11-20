@@ -344,7 +344,6 @@ test("order: 'Approval queued' cards pin to the top of the list, above all other
     parked(5, 50),                         // approval idle — 'Approve to merge'
     ready(4, 40, { approval: "approved" }), // approval queued — 'Approval queued'
     ready(3, 30, { awaitingReview: true }), // review
-    ready(2, 20, { disabled: true }),       // manual
   ]);
   state = withFailure(state, { type: "self-review", pullRequestNumber: 30 });
   const cards = buildInbox(inputFor(state, { keepAwake: "blocked" }));
@@ -353,7 +352,7 @@ test("order: 'Approval queued' cards pin to the top of the list, above all other
   assert.equal(cards[0]?.id, "approval:o/a#40");
   assert.deepEqual(
     cards.slice(1).map((c) => c.source),
-    ["keep-awake", "approval", "review", "failure", "manual"],
+    ["keep-awake", "approval", "review", "failure"],
     "all other cards follow in their normal source order",
   );
 });
@@ -584,10 +583,12 @@ test("tethers: each card about a piece of work is joined to it, saying where its
   const model = fieldModel(state, NOW, { cards, selection: { kind: "work", key: "o/a#3" } });
 
   // "Approval queued" (#20) is pinned to the top, so its tether comes first.
+  // The manual PR (#3) has no inbox card, so its selected line goes to the
+  // inspector, which reaches its GitHub link.
   assert.deepEqual(model.tethers, [
     { cardId: "approval:o/a#20", workKey: "o/a#2", state: "sent" },
     { cardId: "approval:o/a#10", workKey: "o/a#1", state: "waiting" },
-    { cardId: "manual:o/a#3", workKey: "o/a#3", state: "waiting" },
+    { cardId: INSPECTOR_CARD_ID, workKey: "o/a#3", state: "selected" },
   ], "the keep-awake card is about no work, and work with a card needs no second line to the inspector");
 
   const picked = fieldModel(state, NOW, { cards: [], selection: { kind: "work", key: "o/a#1" } });

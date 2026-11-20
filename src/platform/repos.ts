@@ -16,6 +16,9 @@ import { removeProject } from "./relay.js";
 
 const REPO = "REPO";
 
+const MODEL_RE = /^claude-[a-z0-9._-]{1,60}$/;
+const EFFORT_VALUES = ["low", "medium", "high", "xhigh", "max"] as const;
+
 function cleanSettings(value: unknown): RepoSettings {
   if (typeof value !== "object" || value === null) return {};
   const input = value as Record<string, unknown>;
@@ -29,6 +32,13 @@ function cleanSettings(value: unknown): RepoSettings {
     if (reviewers.length > 0) settings.reviewers = reviewers.slice(0, 20);
   }
   if (input["focusMode"] === true) settings.focusMode = true;
+  const model = (v: unknown) => typeof v === "string" && MODEL_RE.test(v) ? v : undefined;
+  const effort = (v: unknown) => EFFORT_VALUES.includes(v as (typeof EFFORT_VALUES)[number]) ? (v as string) : undefined;
+  const im = model(input["initialModel"]); if (im !== undefined) settings.initialModel = im;
+  const rm = model(input["reviewModel"]); if (rm !== undefined) settings.reviewModel = rm;
+  const ie = effort(input["initialEffort"]); if (ie !== undefined) settings.initialEffort = ie;
+  const re = effort(input["reviewEffort"]); if (re !== undefined) settings.reviewEffort = re;
+  const dm = model(input["describeModel"]); if (dm !== undefined) settings.describeModel = dm;
   return settings;
 }
 

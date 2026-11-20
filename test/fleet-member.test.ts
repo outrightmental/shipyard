@@ -256,7 +256,7 @@ test("Shipyard says what a member works on; the machine says only how its own en
     const config: MemberConfig = {
       member: { id: "m_1", name: "atlas" }, release: null, configVersion: "v", maxConcurrency: 5,
       repos: [{ repo: "acme/widgets", maxConcurrency: 2, focusMode: true }, { repo: "acme/gadgets", githubProjectNumber: 4, reviewers: ["alice"] }],
-      github: { ready: true }, git: null, wsUrl: "",
+      engineDefaults: {}, github: { ready: true }, git: null, wsUrl: "",
     };
     assert.deepEqual(envConfigOf(config, machine), {
       claude_code_initial_model: "claude-fable-5-2", claude_timeout_seconds: 7200, dashboard_port: 3100,
@@ -266,6 +266,27 @@ test("Shipyard says what a member works on; the machine says only how its own en
         { github_repository: "acme/gadgets", github_project_number: 4, reviewers: ["alice"] },
       ],
     });
+
+    // Platform engine defaults are applied below machine settings; machine wins when both set the same field.
+    const configWithDefaults: MemberConfig = {
+      ...config,
+      engineDefaults: { initialModel: "claude-sonnet-5-5", reviewModel: "claude-opus-5-5", initialEffort: "xhigh", reviewEffort: "medium", describeModel: "claude-haiku-5-5" },
+      repos: [
+        { repo: "acme/widgets", maxConcurrency: 2, focusMode: true },
+        { repo: "acme/gadgets", initialModel: "claude-haiku-5-5", reviewEffort: "low" },
+      ],
+    };
+    const withDefaults = envConfigOf(configWithDefaults, machine);
+    // Machine's claude_code_initial_model overrides the platform default.
+    assert.equal(withDefaults.claude_code_initial_model, "claude-fable-5-2", "machine wins over platform default");
+    assert.equal(withDefaults.claude_code_review_model, "claude-opus-5-5", "platform default set");
+    assert.equal(withDefaults.claude_code_initial_effort, "xhigh", "platform default set");
+    assert.equal(withDefaults.claude_code_review_effort, "medium", "platform default set");
+    assert.equal(withDefaults.claude_describe_model, "claude-haiku-5-5", "platform default set");
+    // Per-repo overrides are in projects.
+    const gadgets = withDefaults.projects.find((p) => p.github_repository === "acme/gadgets");
+    assert.equal(gadgets?.claude_code_initial_model, "claude-haiku-5-5", "per-repo initial model");
+    assert.equal(gadgets?.claude_code_review_effort, "low", "per-repo review effort");
   } finally {
     rmSync(home, { recursive: true, force: true });
   }

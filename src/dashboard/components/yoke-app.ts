@@ -235,6 +235,7 @@ export class YokeApp extends LitElement {
           .open=${rail.open}
           .overlay=${rail.overlay}
           .logOpen=${this._logOpen}
+          .readOnly=${s.readOnly}
           @inbox-approve=${this._onApprove}
           @inbox-select=${this._onCardSelect}
           @inbox-dismiss=${this._onDismiss}

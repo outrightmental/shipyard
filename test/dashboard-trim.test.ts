@@ -252,9 +252,10 @@ test("below the burning stratum the only saturated ink is a work's mark of its h
   };
   assert.equal(inkOf("checks failing")?.rgb, triplet(palette.red));
   assert.equal(inkOf("blocked by #8")?.rgb, triplet(palette.orange));
+  assert.equal(inkOf("manual")?.rgb, triplet(palette.orange));
   assert.equal(inkOf("ready for review")?.rgb, triplet(palette.yellow));
   assert.equal(inkOf("approved")?.rgb, triplet(palette.turquoise));
-  for (const neutral of ["merged", "manual", "checks running"]) {
+  for (const neutral of ["merged", "checks running"]) {
     const ink = inkOf(neutral);
     assert.ok(ink && hueFree(parseColor(ink.rgb)! as unknown as Rgb), `${neutral} is neutral`);
   }

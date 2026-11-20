@@ -7,7 +7,7 @@ It is now two things:
 - **The field** — one `<canvas>` the size of the window, on which the state of the whole run is drawn.
 - **The inbox** — every interaction the Dashboard offers, as cards, down the right-hand edge of the screen.
 
-The README's [Dashboard](YOKE.md#dashboard) section says what each shows. This document says how they are built, and why that way.
+The README's [Dashboard](ENGINE.md#dashboard) section says what each shows. This document says how they are built, and why that way.
 
 ## The idea: heat rises
 
@@ -16,7 +16,7 @@ The README's [Dashboard](YOKE.md#dashboard) section says what each shows. This d
 | Level | What it is | How it is drawn | In colour |
 | --- | --- | --- | --- |
 | `burning` | an engine is running an action on it | a *reactor*: the engine's ring, and the work in large type beside it | the work's own hue |
-| `queued` | Yoke works it next | a line, whole, at the head of its project's group | gray, banded; its dot of hue; a status signal if it has one |
+| `queued` | Shipyard works it next | a line, whole, at the head of its project's group | gray, banded; its dot of hue; a status signal if it has one |
 | `waiting` | on someone else first | a line at 40% opacity, after its project's queued work | gray, banded; its dot of hue and a status signal, if it has one, at full strength |
 | `cold` | nothing is coming | a line of smaller, dimmer type at 40% opacity, last in its project | gray, banded; its dot of hue and a status signal, if it has one, at full strength |
 
@@ -29,7 +29,7 @@ The lower section used to be a stratum per level — QUEUED, WAITING, COLD, each
 Decisions, and why:
 
 - **The groups are in the order of the projects' names.** Nothing that happens to a project's work can move its group past another, so the only thing that moves a group is the work above it growing or shrinking. A group sorted by heat would jump past its neighbours whenever one piece of work changed level, and every line in both would move with it.
-- **Within a project, queued work comes first, then waiting, then cold** (`compareProjectWork` in `shared/work-view.ts`), each level in `compareWork`'s order. What yoke works next still leads, as it did when it had a stratum of its own.
+- **Within a project, queued work comes first, then waiting, then cold** (`compareProjectWork` in `shared/work-view.ts`), each level in `compareWork`'s order. What Shipyard works next still leads, as it did when it had a stratum of its own.
 - **The level is said by weight, not by place.** A waiting line is drawn at 40% opacity (`DIMMED_OPACITY`, `burnOpacity` in `shared/burn-level.ts`, carried on `WorkView.opacity`) — its number, title, neutral status, the gray of its track and its gray glyph — so it recedes against the queued work around it. Cold work shares the group, so it is dimmed the same; its smaller, dimmer type (`ROW_TYPE` and `INK` in `field/painter.ts`) keeps it the faintest of the three, where drawn whole it would have stood out above the waiting lines.
 - **A signal is not dimmed.** An alarm does not cool (#286): a dimmed line's red, orange, yellow or turquoise status, and the glyph in the same colour, are drawn at full strength. A PR waiting for your approval recedes; the yellow saying so does not.
 - **Nor is the dot of its issue's hue.** It is what a piece of work is tracked by as it cools (#286), so it is drawn whole on a dimmed line too — see "Which issue", below.
@@ -76,8 +76,8 @@ A line has at most one signal, worked out with its status in `workStatus`, so th
 | Signal | Colour | When |
 | --- | --- | --- |
 | `error` | red, `--color-red` | its last action failed and no engine has taken it up again (`WorkView.failure`: until an engine takes it up again, or for 90 minutes, `FAILURE_SHOW_MS` — dismissing its inbox card does not clear it, since nothing has answered the error yet); its checks are failing; its approval was refused or failed |
-| `blocked` | orange, `--color-orange` | it is blocked by other issues, or labelled `manual` — yoke will not move it, so it is blocked on a person — a hold, like a usage limit or a shutdown, which are orange too |
-| `review` | yellow, `--color-yellow` | it waits on a person: ready for review, or parked for an approval Yoke is asking for |
+| `blocked` | orange, `--color-orange` | it is blocked by other issues, or labelled `manual` — Shipyard will not move it, so it is blocked on a person — a hold, like a usage limit or a shutdown, which are orange too |
+| `review` | yellow, `--color-yellow` | it waits on a person: ready for review, or parked for an approval Shipyard is asking for |
 | `approved` | turquoise, `--color-turquoise` | an approval going through: approved, and waiting for or undergoing its merge |
 | none | gray | merged; out of the queue; checks running; waiting for an engine; implementing; an approval sent and not yet answered; shut down |
 
@@ -183,21 +183,21 @@ With nothing in it the inbox folds to a strip and gives its room to the field (`
 | `disk` | the disk too full to start new work | none |
 | `keep-awake` | a keep-awake loop the browser refused to autoplay | starts it |
 | `approval` | a PR parked by the `review` label, and every approval under way | Approve |
-| `review` | a PR Yoke has asked a person to review on GitHub (Project SDLC) | opens it |
+| `review` | a PR Shipyard has asked a person to review on GitHub (Project SDLC) | opens it |
 | `failure` | an action that failed and has not been taken up again | none; it can be dismissed |
 | `fleet` (non-`repo-unassigned`) | a fleet notice: no GitHub connection, no active members, a member offline or with a note | goes to the console page where it is put right |
 | `fleet` (`repo-unassigned`) | a subscribed repository with no member assigned | goes to the console page where it is put right |
 
-Every card has the same shape (`InboxCard`), and `<yoke-inbox>` only draws cards. **To add an interaction, write one more function that returns cards and add it to `buildInbox`**; nothing that draws the inbox needs to know of it. If its button does something new, add a variant to `InboxAction` and one `case` to the element.
+Every card has the same shape (`InboxCard`), and `<shipyard-inbox>` only draws cards. **To add an interaction, write one more function that returns cards and add it to `buildInbox`**; nothing that draws the inbox needs to know of it. If its button does something new, add a variant to `InboxAction` and one `case` to the element.
 
 Two of the sources needed something the Dashboard did not have:
 
 - **`review`** needs to know a PR is parked for a person on GitHub, which the browser cannot work out from a lifecycle pair. The server now says so: `awaitsHumanReview` in `src/orchestrator.ts` mirrors the planner's parking rule — the way `reviewApprovalState` does for the `review` label — and `broadcastLifecycleUpdate` sets `awaitingReview` on the pair. A test pins the two against each other: whatever the planner would act on is never said to be waiting on a person.
-- **`failure`** needs the failure to outlive the event that reported it. An engine reports itself idle in the same tick as its action fails, so the cylinder's `error` status never survived long enough to be seen. The store now keeps the latest failure per piece of work (`DashboardState.failures`) until an engine starts on that work again, the work leaves the lifecycle, or it is older than Yoke's longest retry backoff.
+- **`failure`** needs the failure to outlive the event that reported it. An engine reports itself idle in the same tick as its action fails, so the cylinder's `error` status never survived long enough to be seen. The store now keeps the latest failure per piece of work (`DashboardState.failures`) until an engine starts on that work again, the work leaves the lifecycle, or it is older than Shipyard's longest retry backoff.
 
 ### The approval is the pill's, moved
 
-`shared/pill-approval.ts` — `approvalView`, the press ledger in the store, the request and its answers over the socket — is unchanged. An approval card shows exactly the button and the line the pill showed, so everything #274, #276 and #278 established still holds: one press approves, it reads Queued at once, it follows Yoke's reports and never a timer, and it never falls back to Approve as if it had not been pressed.
+`shared/pill-approval.ts` — `approvalView`, the press ledger in the store, the request and its answers over the socket — is unchanged. An approval card shows exactly the button and the line the pill showed, so everything #274, #276 and #278 established still holds: one press approves, it reads Queued at once, it follows Shipyard's reports and never a timer, and it never falls back to Approve as if it had not been pressed.
 
 ### Never under a finger
 
@@ -215,7 +215,7 @@ The inbox is DOM and the field is canvas, so the inbox reports where its cards a
 
 ## Accessibility
 
-A canvas is opaque to a screen reader and to the keyboard. `<yoke-field>` therefore also renders everything it draws as ordinary markup, out of sight but not hidden: the engines as a list, the burning work and then each project's work under a heading — the project's whole `owner/repo` name — and every piece of work as a link to GitHub. Below the reactors each item ends with its level in a word (`queued`, `waiting`, `cold`), since the canvas says it only by how solid it draws the line. Focusing one of those links draws a focus ring around the same thing on the canvas and scrolls it into view. The inbox and the activity drawer are ordinary DOM.
+A canvas is opaque to a screen reader and to the keyboard. `<shipyard-field>` therefore also renders everything it draws as ordinary markup, out of sight but not hidden: the engines as a list, the burning work and then each project's work under a heading — the project's whole `owner/repo` name — and every piece of work as a link to GitHub. Below the reactors each item ends with its level in a word (`queued`, `waiting`, `cold`), since the canvas says it only by how solid it draws the line. Focusing one of those links draws a focus ring around the same thing on the canvas and scrolls it into view. The inbox and the activity drawer are ordinary DOM.
 
 ## Working on it
 
@@ -223,6 +223,6 @@ A canvas is opaque to a screen reader and to the keyboard. `<yoke-field>` theref
 npm run demo:dashboard
 ```
 
-starts the real Dashboard server and feeds it the events a real run emits, from a small simulation of the loop over a made-up backlog (`tools/dashboard-demo.ts`). An Approve press is answered the way Yoke answers one. `--scene=` shows it busy, quiet, held on a usage limit, with one project, crowded past what fits, or in Project SDLC; `--shutdown-after=` shows a graceful shutdown; `--fail=` makes runs fail.
+starts the real Dashboard server and feeds it the events a real run emits, from a small simulation of the loop over a made-up backlog (`tools/dashboard-demo.ts`). An Approve press is answered the way Shipyard answers one. `--scene=` shows it busy, quiet, held on a usage limit, with one project, crowded past what fits, or in Project SDLC; `--shutdown-after=` shows a graceful shutdown; `--fail=` makes runs fail.
 
 `npm run build` type-checks the browser code as well as the server's (`npm run typecheck:dashboard`): the root `tsconfig.json` leaves `src/dashboard` out of its build, so until now only the files a test happened to import were ever checked.

@@ -17,11 +17,11 @@ import { cachedEvents, relayEvents, removeProject } from "./relay.js";
  * what an operator needs to see. A fleet member reads its own repositories
  * and reports them; a repository with no member has nobody to read it, so the
  * platform does, and keeps the result as the events of a member of its own,
- * `central`, drawn from the same lifecycle Yoke's dashboard is.
+ * `central`, drawn from the same lifecycle Shipyard's dashboard is.
  *
  * It reads, and only reads: nothing here starts work or changes GitHub.
  *
- * And it reads lightly. A fleet member reads a repository with Yoke's whole
+ * And it reads lightly. A fleet member reads a repository with Shipyard's whole
  * client, which asks GitHub about every issue's dependencies and every pull
  * request's checks and review threads, because it is about to act on the
  * answers. That is a request per issue, in turn: on 2026-11-15 the first

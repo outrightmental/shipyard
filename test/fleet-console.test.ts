@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import WebSocket from "ws";
 import { DashboardServer, READ_ONLY_REASON } from "../src/dashboard-server.js";
 import { EventEmitter, type DashboardEvent } from "../src/event-emitter.js";
-import { YokeInbox } from "../src/dashboard/components/yoke-inbox.js";
+import { ShipyardInbox } from "../src/dashboard/components/shipyard-inbox.js";
 import { ApiError, errorLine, type Api } from "../src/dashboard/console/api.js";
 import { decodeClaims, readHandOff, sessionFromTokens, type Auth } from "../src/dashboard/console/auth.js";
 import { normalizeConfig } from "../src/dashboard/console/config.js";
@@ -316,7 +316,7 @@ test("what the fleet has to say is in the inbox, each with a button that goes wh
   assert.ok(cards.every((card) => !card.dismissible), "each stands until what it says is no longer so");
 
   // The button says where it goes, and the inbox passes that on for the console to act on.
-  const inbox = new YokeInbox();
+  const inbox = new ShipyardInbox();
   Object.assign(inbox, { cards, multiProject: true, open: true });
   const heard: string[] = [];
   inbox.addEventListener("inbox-navigate", (event) => heard.push((event as CustomEvent<string>).detail));

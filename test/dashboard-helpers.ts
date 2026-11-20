@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { YokeInbox } from "../src/dashboard/components/yoke-inbox.js";
+import { ShipyardInbox } from "../src/dashboard/components/shipyard-inbox.js";
 import { Animator } from "../src/dashboard/field/animator.js";
 import type { Point } from "../src/dashboard/field/geometry.js";
 import { layoutField, type FieldLayout, type Viewport } from "../src/dashboard/field/layout.js";
@@ -140,7 +140,7 @@ export function stateWith(pairs: LifecyclePair[], repo = "o/a", overrides: Parti
 // ── The inbox, as the app draws it ───────────────────────────────────────────
 
 export interface RenderedInbox {
-  inbox: YokeInbox;
+  inbox: ShipyardInbox;
   works: WorkView[];
   cards: InboxCard[];
   /** The whole inbox as markup. */
@@ -152,7 +152,7 @@ export interface RenderedInbox {
 }
 
 /**
- * The inbox for `state`, built and rendered the way yoke-app does it: the
+ * The inbox for `state`, built and rendered the way shipyard-dashboard does it: the
  * state's work, the cards about it, and the element that draws them.
  */
 export function renderInbox(
@@ -162,7 +162,7 @@ export function renderInbox(
     keepAwake?: KeepAwakeStatus;
     dismissed?: ReadonlySet<string>;
     ledger?: InboxLedger;
-    inbox?: YokeInbox;
+    inbox?: ShipyardInbox;
   } = {},
 ): RenderedInbox {
   const nowMs = options.nowMs ?? Date.now();
@@ -175,7 +175,7 @@ export function renderInbox(
     nowMs,
     failureShowMs: FAILURE_SHOW_MS,
   }, options.ledger ?? new InboxLedger());
-  const inbox = options.inbox ?? new YokeInbox();
+  const inbox = options.inbox ?? new ShipyardInbox();
   Object.assign(inbox, { cards, multiProject: state.multiProject, open: true });
   const template = inbox.render();
   const cardTemplates = findTemplates(template, 'data-card="');

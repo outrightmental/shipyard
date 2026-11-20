@@ -194,7 +194,7 @@ export async function fetchAnthropicUsage(
         Authorization: "Bearer " + token,
         "anthropic-beta": ANTHROPIC_OAUTH_BETA,
         Accept: "application/json",
-        "User-Agent": "yoke",
+        "User-Agent": "shipyard",
       },
       signal: AbortSignal.timeout(timeoutMs),
     });
@@ -230,7 +230,7 @@ const NO_CLAUDE_LOGIN_REASON =
  * The access token the Claude CLI is logged in with: the `claudeAiOauth`
  * credential it keeps for its own runs, which carries the `user:profile` scope
  * the usage endpoint needs. Read afresh for every poll, because the CLI renews
- * it and a copy taken at startup would expire within hours. Yoke never renews
+ * it and a copy taken at startup would expire within hours. Shipyard never renews
  * it itself — that would hand the CLI a used-up refresh token.
  *
  * Without one — the CLI is not logged in, or runs on a Console API key, which

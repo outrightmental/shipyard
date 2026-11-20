@@ -94,7 +94,7 @@ test("withWorkedPairs: ignores idle, done and errored cylinders and ones with no
 });
 
 test("withWorkedPairs: the same issue number in another project is not a match", () => {
-  const pairs = [issuePair(402, "outrightmental/yoke")];
+  const pairs = [issuePair(402, "outrightmental/shipyard")];
   const out = withWorkedPairs(pairs, [makeCylinder({ repo: "outrightmental/butterfly" })]);
   assert.equal(out.length, 2);
   assert.equal(out[1]!.repo, "outrightmental/butterfly");

@@ -244,11 +244,11 @@ test("the keep-awake lamp plays both bundled sources", () => {
 });
 
 test("the Dashboard mounts the keep-awake lamp whenever it is open", async () => {
-  const { YokeApp } = await import("../src/dashboard/components/yoke-app.js");
+  const { ShipyardDashboard } = await import("../src/dashboard/components/shipyard-dashboard.js");
   const { initialState } = await import("../src/dashboard/store/dashboard-store.js");
   const { flatten } = await import("./dashboard-helpers.js");
 
-  // Whatever yoke is doing — running, held, shutting down, out of reach.
+  // Whatever Shipyard is doing — running, held, shutting down, out of reach.
   const running = { ...initialState(), connection: "connected" as const };
   for (const [description, state] of [
     ["running", running],
@@ -256,7 +256,7 @@ test("the Dashboard mounts the keep-awake lamp whenever it is open", async () =>
     ["shut down", { ...running, shutdownRequested: true, appShutdown: true }],
     ["disconnected", { ...running, connection: "disconnected" as const }],
   ] as const) {
-    const app = new YokeApp();
+    const app = new ShipyardDashboard();
     Object.assign(app, { _state: state });
     const markup = flatten(app.render());
     assert.match(

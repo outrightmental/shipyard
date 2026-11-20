@@ -16,7 +16,7 @@ import {
   type ApprovalView,
 } from "../src/dashboard/shared/pill-approval.js";
 import { pillActivity, type PillActivity } from "../src/dashboard/shared/pill-activity.js";
-import { YokeInbox } from "../src/dashboard/components/yoke-inbox.js";
+import { ShipyardInbox } from "../src/dashboard/components/shipyard-inbox.js";
 import { DashboardStore, recordApprovalPress, initialState } from "../src/dashboard/store/dashboard-store.js";
 import type { ApprovalPress, DashboardState, LifecyclePair, PullRequestApprovalStatus } from "../src/dashboard/store/types.js";
 import { click, cylinder, flatten, renderInbox, stateWith } from "./dashboard-helpers.js";
@@ -47,7 +47,7 @@ interface CardProps {
   approvalStatus?: PullRequestApprovalStatus;
   approvalPress?: ApprovalPress | null;
   connected?: boolean;
-  /** Yoke is shutting down. */
+  /** Shipyard is shutting down. */
   dark?: boolean;
 }
 
@@ -69,7 +69,7 @@ function stateFor(pair: LifecyclePair, props: CardProps = {}): DashboardState {
  * The inbox card for `pair`'s PR, built and drawn the way the app does it:
  * its markup, and its Approve button if it has one.
  */
-function renderCard(pair: LifecyclePair, props: CardProps = {}, inbox = new YokeInbox()) {
+function renderCard(pair: LifecyclePair, props: CardProps = {}, inbox = new ShipyardInbox()) {
   const rendered = renderInbox(stateFor(pair, props), { inbox });
   const card = rendered.card();
   return { inbox, cards: rendered.cards, html: flatten(card), button: rendered.approveButton() };
@@ -89,7 +89,7 @@ test("approveControl: a ready PR parked by the review label offers Approve", () 
   assert.deepEqual(control, {
     target: { repo: "o/a", pullRequestNumber: 10 },
     disabled: false,
-    title: "Approve PR #10: yoke squash-merges it",
+    title: "Approve PR #10: Shipyard squash-merges it",
   });
 });
 
@@ -97,7 +97,7 @@ test("approveControl: while checks run it approves a merge that waits for them",
   const control = approveControl(parkedPair({}, { checksStatus: "pending" }), "waiting-ci", false);
 
   assert.equal(control?.disabled, false);
-  assert.equal(control?.title, "Approve PR #10: yoke squash-merges it once its checks pass");
+  assert.equal(control?.title, "Approve PR #10: Shipyard squash-merges it once its checks pass");
 });
 
 test("approveControl: failing checks disable the button, saying why", () => {
@@ -115,7 +115,7 @@ test("approveControl: no button unless the PR is parked awaiting approval and no
     ["merged", parkedPair({ prPhase: "completed" }), null, false],
     ["labelled manual", parkedPair({ disabled: true }), "manual", false],
     ["an engine on it", parkedPair(), "working", false],
-    ["yoke shutting down", parkedPair(), "review", true],
+    ["Shipyard shutting down", parkedPair(), "review", true],
     ["no PR", parkedPair({ pr: null, prPhase: "absent" }), null, false],
   ];
   for (const [description, pair, activity, dark] of cases) {
@@ -144,11 +144,11 @@ test("pillActivity: an approved PR no longer reads as waiting on a reviewer", ()
 // ── the inbox card ───────────────────────────────────────────────────────────
 
 /**
- * Do with the inbox's presses what yoke-app and the store do: record each one,
+ * Do with the inbox's presses what shipyard-dashboard and the store do: record each one,
  * sent unless `sent` is false. `pressed` is the PRs pressed, in order, and
  * `press()` the press now on record for PR #10, to draw the inbox from again.
  */
-function actLikeTheApp(inbox: YokeInbox, sent = true) {
+function actLikeTheApp(inbox: ShipyardInbox, sent = true) {
   let state = initialState();
   const pressed: unknown[] = [];
   inbox.addEventListener("inbox-approve", (event) => {
@@ -170,7 +170,7 @@ test("inbox card: a parked PR has a card in the inbox with an Approve button", (
   assert.match(html, /<h3 class="inbox-title">Add the thing<\/h3>/);
   assert.match(flatten(button), /class="inbox-action approve idle"/);
   assert.match(flatten(button), />Approve<\/button>/);
-  assert.match(flatten(button), /title="Approve PR #10: yoke squash-merges it"/);
+  assert.match(flatten(button), /title="Approve PR #10: Shipyard squash-merges it"/);
   assert.match(flatten(button), /\?disabled=false/);
 });
 
@@ -199,8 +199,8 @@ test("inbox card: an approved PR's card says so, its button Queued until an engi
   assert.match(html, statusLine("approved — waiting for a free engine to squash-merge it", "approved"));
 });
 
-test("inbox card: one press approves — it asks yoke once and reads Queued at once (#278)", () => {
-  const inbox = new YokeInbox();
+test("inbox card: one press approves — it asks Shipyard once and reads Queued at once (#278)", () => {
+  const inbox = new ShipyardInbox();
   const app = actLikeTheApp(inbox);
 
   click(renderCard(parkedPair(), {}, inbox).button);
@@ -210,7 +210,7 @@ test("inbox card: one press approves — it asks yoke once and reads Queued at o
   assert.match(flatten(button), /class="inbox-action approve queued"/);
   assert.match(flatten(button), />Queued<\/button>/);
   assert.match(flatten(button), /\?disabled=true/, "and cannot be sent twice");
-  assert.match(html, statusLine("queued — sent to yoke…", "progress"));
+  assert.match(html, statusLine("queued — sent to Shipyard…", "progress"));
 
   click(button);
   assert.equal(app.pressed.length, 1);
@@ -222,14 +222,14 @@ test("inbox card: there is no confirm step left anywhere", () => {
 });
 
 test("inbox card: a press made while not connected reads Queued, waiting to be sent, and is not pressed twice (#278)", () => {
-  const inbox = new YokeInbox();
+  const inbox = new ShipyardInbox();
   const app = actLikeTheApp(inbox, false);
 
   click(renderCard(parkedPair(), {}, inbox).button);
   const { html, button } = renderCard(parkedPair(), { approvalPress: app.press(), connected: false }, inbox);
   assert.match(flatten(button), />Queued<\/button>/, "never back to Approve, and never an error to give up on");
   assert.match(flatten(button), /\?disabled=true/);
-  assert.match(html, statusLine("queued — reconnecting to yoke…", "progress"));
+  assert.match(html, statusLine("queued — reconnecting to Shipyard…", "progress"));
 
   click(button);
   assert.equal(app.pressed.length, 1, "the store sends it when the connection is back");
@@ -329,11 +329,11 @@ function view(opts: {
   });
 }
 
-test("approvalView: one press reads Queued at once, before yoke has said a word", () => {
+test("approvalView: one press reads Queued at once, before Shipyard has said a word", () => {
   const v = view({ press: pressAt(NOW), nowMs: NOW });
 
-  assert.deepEqual(v.button, { step: "queued", label: "Queued", disabled: true, title: "PR #10 · queued — sent to yoke…" });
-  assert.deepEqual(v.line, { text: "queued — sent to yoke…", tone: "progress" });
+  assert.deepEqual(v.button, { step: "queued", label: "Queued", disabled: true, title: "PR #10 · queued — sent to Shipyard…" });
+  assert.deepEqual(v.line, { text: "queued — sent to Shipyard…", tone: "progress" });
   assert.equal(v.approved, false);
   assert.equal(v.refreshAtMs, NOW + APPROVE_ACK_MS, "and looks again when the answer is due");
 });
@@ -344,12 +344,12 @@ test("approvalView: an answer from before the press is not an answer to it", () 
   assert.equal(view({ status: earlier, press: pressAt(NOW), nowMs: NOW + 1_000 }).button?.label, "Queued");
 });
 
-test("approvalView: while yoke reads the PR and waits for an engine to finish planning, it stays Queued, with no time limit", () => {
+test("approvalView: while Shipyard reads the PR and waits for an engine to finish planning, it stays Queued, with no time limit", () => {
   const loading = view({ status: approvalStatus("loading", NOW + 50), press: pressAt(NOW), nowMs: NOW + 1_000 });
   assert.deepEqual(loading.button, {
-    step: "queued", label: "Queued", disabled: true, title: "PR #10 · queued — yoke is reading PR #10 from GitHub…",
+    step: "queued", label: "Queued", disabled: true, title: "PR #10 · queued — Shipyard is reading PR #10 from GitHub…",
   });
-  assert.deepEqual(loading.line, { text: "queued — yoke is reading PR #10 from GitHub…", tone: "progress" });
+  assert.deepEqual(loading.line, { text: "queued — Shipyard is reading PR #10 from GitHub…", tone: "progress" });
   assert.equal(loading.refreshAtMs, null, "no fallback timer");
 
   const waiting = view({ status: approvalStatus("waiting", NOW + 50), press: pressAt(NOW), nowMs: NOW + 10 * 60_000 });
@@ -461,7 +461,7 @@ test("approvalView: a press on a PR that goes back to draft keeps saying how it 
 
   const unanswered = view({ pair, press: pressAt(NOW), nowMs: NOW + 1_000 });
   assert.equal(unanswered.button?.label, "Queued");
-  assert.deepEqual(unanswered.line, { text: "queued — sent to yoke…", tone: "progress" });
+  assert.deepEqual(unanswered.line, { text: "queued — sent to Shipyard…", tone: "progress" });
 
   const refused = view({
     pair,
@@ -497,7 +497,7 @@ test("approvalView: a refusal shows its reason and offers Retry, for as long as 
   const v = view({ status: refused, press: pressAt(NOW), nowMs: NOW + 3_000 });
 
   assert.deepEqual(v.button, {
-    step: "retry", label: "Retry", disabled: false, title: "Retry — Approve PR #10: yoke squash-merges it",
+    step: "retry", label: "Retry", disabled: false, title: "Retry — Approve PR #10: Shipyard squash-merges it",
   });
   assert.deepEqual(v.line, { text: "not approved: its checks are failing", tone: "problem" });
 
@@ -537,7 +537,7 @@ test("approvalView: no answer within APPROVE_ACK_MS stays Queued and says so, fo
   const v = view({ press: pressAt(NOW), nowMs: NOW + APPROVE_ACK_MS });
   assert.equal(v.button?.label, "Queued");
   assert.equal(v.button?.disabled, true);
-  assert.deepEqual(v.line, { text: "queued — sent to yoke, no answer yet…", tone: "progress" });
+  assert.deepEqual(v.line, { text: "queued — sent to Shipyard, no answer yet…", tone: "progress" });
   assert.equal(v.refreshAtMs, null, "nothing more to wait for but an answer");
   assert.equal(view({ press: pressAt(NOW), nowMs: NOW + 60 * 60_000 }).button?.label, "Queued", "an hour on, still");
 
@@ -546,7 +546,7 @@ test("approvalView: no answer within APPROVE_ACK_MS stays Queued and says so, fo
 
   // Sent again on reconnecting: it waits for an answer from then.
   const resent = pressAt(NOW, { sentAtMs: NOW + 60_000 });
-  assert.equal(view({ press: resent, nowMs: NOW + 61_000 }).line?.text, "queued — sent to yoke…");
+  assert.equal(view({ press: resent, nowMs: NOW + 61_000 }).line?.text, "queued — sent to Shipyard…");
   assert.equal(view({ press: resent, nowMs: NOW + 61_000 }).refreshAtMs, NOW + 60_000 + APPROVE_ACK_MS);
 });
 
@@ -554,7 +554,7 @@ test("approvalView: a dashboard that lost its connection stays Queued, reconnect
   for (const nowMs of [NOW + 1_000, NOW + APPROVE_ACK_MS, NOW + 60 * 60_000]) {
     const away = view({ press: pressAt(NOW), connected: false, nowMs });
     assert.equal(away.button?.label, "Queued");
-    assert.deepEqual(away.line, { text: "queued — reconnecting to yoke…", tone: "progress" });
+    assert.deepEqual(away.line, { text: "queued — reconnecting to Shipyard…", tone: "progress" });
   }
 
   const replayed = approvalStatus("approved", NOW + 60_000);
@@ -569,7 +569,7 @@ test("approvalView: a press made while not connected stays Queued until the stor
     const v = view({ press, connected, nowMs: NOW + 60 * 60_000 });
     assert.equal(v.button?.label, "Queued");
     assert.equal(v.button?.disabled, true);
-    assert.deepEqual(v.line, { text: "queued — reconnecting to yoke…", tone: "progress" });
+    assert.deepEqual(v.line, { text: "queued — reconnecting to Shipyard…", tone: "progress" });
   }
 });
 
@@ -583,7 +583,7 @@ test("approvalView: another dashboard's refusal shows on Approve, for a minute",
   assert.equal(view({ status: refused, nowMs: NOW + APPROVAL_OUTCOME_SHOW_MS }).line, null);
 });
 
-test("approvalView: should yoke ask for approval again after recording one, Approve comes back, saying so", () => {
+test("approvalView: should Shipyard ask for approval again after recording one, Approve comes back, saying so", () => {
   const approved = approvalStatus("approved", NOW + 2_000);
 
   // A beat after the answer the lifecycle may not have caught up yet.
@@ -591,23 +591,23 @@ test("approvalView: should yoke ask for approval again after recording one, Appr
   assert.equal(lagging.button?.label, "Queued");
   assert.equal(lagging.refreshAtMs, NOW + 2_000 + APPROVAL_OUTCOME_SHOW_MS);
 
-  // Long after, a lifecycle asking for approval means yoke wants a new one.
+  // Long after, a lifecycle asking for approval means Shipyard wants a new one.
   const again = view({ status: approved, press: pressAt(NOW), nowMs: NOW + 2_000 + APPROVAL_OUTCOME_SHOW_MS });
-  assert.deepEqual(again.button, { step: "idle", label: "Approve", disabled: false, title: "Approve PR #10: yoke squash-merges it" });
-  assert.deepEqual(again.line, { text: "approved earlier — yoke is asking for approval again", tone: "progress" });
+  assert.deepEqual(again.button, { step: "idle", label: "Approve", disabled: false, title: "Approve PR #10: Shipyard squash-merges it" });
+  assert.deepEqual(again.line, { text: "approved earlier — Shipyard is asking for approval again", tone: "progress" });
   assert.equal(again.approved, false);
 });
 
-test("approvalView: shutting down, an approval waits for yoke to run again, and a refused press says why it cannot retry", () => {
+test("approvalView: shutting down, an approval waits for Shipyard to run again, and a refused press says why it cannot retry", () => {
   const waiting = view({ pair: parkedPair({ approval: "approved" }), dark: true, nowMs: NOW });
   assert.equal(waiting.button?.label, "Queued");
-  assert.equal(waiting.line?.text, "approved — an engine squash-merges it once yoke runs again");
+  assert.equal(waiting.line?.text, "approved — an engine squash-merges it once Shipyard runs again");
 
   const refused = view({
-    status: approvalStatus("refused", NOW + 1_000, { reason: "yoke is shutting down and will start no new work" }),
+    status: approvalStatus("refused", NOW + 1_000, { reason: "Shipyard is shutting down and will start no new work" }),
     press: pressAt(NOW), dark: true, nowMs: NOW + 2_000,
   });
-  assert.deepEqual(refused.button, { step: "retry", label: "Retry", disabled: true, title: "Cannot retry: yoke is shutting down" });
+  assert.deepEqual(refused.button, { step: "retry", label: "Retry", disabled: true, title: "Cannot retry: Shipyard is shutting down" });
 });
 
 test("approvalView: another PR's status or press never shows on this one", () => {
@@ -645,14 +645,14 @@ test("approvalView: after a press the pill never reads Approve as if it had not 
     assert.ok(v.button !== null, `a button: ${description}`);
     if (v.button?.step === "idle") {
       // The one way back to Approve: the approval went through, and long
-      // after, with no engine on it, yoke asks for a new one — and says so.
+      // after, with no engine on it, Shipyard asks for a new one — and says so.
       assert.equal(state, "approved", description);
       assert.ok(arrival > 0 && approval === "awaiting-approval" && activity !== "working", description);
       assert.match(v.line?.text ?? "", /^approved earlier/, description);
     }
     if (v.button?.step === "retry") {
       assert.equal(v.line?.tone, "problem", `Retry says why: ${description}`);
-      assert.ok(state === "refused" || state === "failed", `Retry only on yoke's own refusal or failure: ${description}`);
+      assert.ok(state === "refused" || state === "failed", `Retry only on Shipyard's own refusal or failure: ${description}`);
     }
     if (state === null) assert.notEqual(v.button?.step, "retry", `no answer is no error: ${description}`);
     checked++;
@@ -684,23 +684,23 @@ test("approvalPressFor finds this dashboard's press of a pill's PR by project an
   assert.equal(approvalPressFor(presses, parkedPair({ pr: null, prPhase: "absent" })), null);
 });
 
-// ── the card following yoke and the engines ──────────────────────────────────
+// ── the card following Shipyard and the engines ──────────────────────────────────
 
-test("inbox card: after one press it follows yoke and the engines, not a timer, from Queued to Merged", (t) => {
+test("inbox card: after one press it follows Shipyard and the engines, not a timer, from Queued to Merged", (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: NOW });
-  const inbox = new YokeInbox();
+  const inbox = new ShipyardInbox();
   const app = actLikeTheApp(inbox);
 
   click(renderCard(parkedPair(), {}, inbox).button);
   const press = app.press();
   let rendered = renderCard(parkedPair(), { approvalPress: press }, inbox);
   assert.match(flatten(rendered.button), />Queued<\/button>/, "Queued the instant it is pressed");
-  assert.match(rendered.html, statusLine("queued — sent to yoke…"));
+  assert.match(rendered.html, statusLine("queued — sent to Shipyard…"));
 
   t.mock.timers.tick(50);
   rendered = renderCard(parkedPair(), { approvalPress: press, approvalStatus: approvalStatus("loading", Date.now()) }, inbox);
   assert.match(flatten(rendered.button), />Queued<\/button>/);
-  assert.match(rendered.html, statusLine("queued — yoke is reading PR #10 from GitHub…"));
+  assert.match(rendered.html, statusLine("queued — Shipyard is reading PR #10 from GitHub…"));
 
   t.mock.timers.tick(40_000);
   rendered = renderCard(parkedPair(), { approvalPress: press, approvalStatus: approvalStatus("waiting", Date.now() - 39_000) }, inbox);
@@ -731,7 +731,7 @@ test("inbox card: after one press it follows yoke and the engines, not a timer, 
 
 test("inbox card: no answer within APPROVE_ACK_MS stays Queued, saying so", (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: NOW });
-  const inbox = new YokeInbox();
+  const inbox = new ShipyardInbox();
   const app = actLikeTheApp(inbox);
 
   click(renderCard(parkedPair(), {}, inbox).button);
@@ -739,7 +739,7 @@ test("inbox card: no answer within APPROVE_ACK_MS stays Queued, saying so", (t) 
   const { html, button } = renderCard(parkedPair(), { approvalPress: app.press() }, inbox);
   assert.match(flatten(button), />Queued<\/button>/);
   assert.match(flatten(button), /\?disabled=true/);
-  assert.match(html, statusLine("queued — sent to yoke, no answer yet…"));
+  assert.match(html, statusLine("queued — sent to Shipyard, no answer yet…"));
 });
 
 test("inbox card: another dashboard's approval shows as Queued here", () => {
@@ -769,7 +769,7 @@ test("DashboardStore.approvePullRequest records the press, sent or not, so the c
 
     const { html, button } = renderCard(parkedPair(), { approvalPress: press, connected: false });
     assert.match(flatten(button), />Queued<\/button>/);
-    assert.match(html, statusLine("queued — reconnecting to yoke…"));
+    assert.match(html, statusLine("queued — reconnecting to Shipyard…"));
   } finally {
     store.disconnect();
   }

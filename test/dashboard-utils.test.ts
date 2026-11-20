@@ -807,7 +807,7 @@ test("broadcastLifecycleUpdate: in project mode a PR parked for review says it w
     issues: [makeIssue({ number: 10 }), makeIssue({ number: 11 }), makeIssue({ number: 12 })],
     pullRequests: [
       makePR({ number: 20, closingIssueNumbers: [10], linkedIssueNumbers: [10] }),
-      // Returned to draft: yoke's to re-review, not a person's to wait on.
+      // Returned to draft: Shipyard's to re-review, not a person's to wait on.
       makePR({ number: 21, draft: true, closingIssueNumbers: [11], linkedIssueNumbers: [11] }),
       // Never sent for review: still being worked.
       makePR({ number: 22, closingIssueNumbers: [12], linkedIssueNumbers: [12] }),
@@ -825,7 +825,7 @@ test("broadcastLifecycleUpdate: in project mode a PR parked for review says it w
   broadcastLifecycleUpdate(snapshot, new Set(), new Set(), {}, true);
   const pairs = (await projectMode).pairs as Pair[];
   assert.equal(awaiting(pairs, 20), true);
-  assert.equal(awaiting(pairs, 21), undefined, "a draft is yoke's again");
+  assert.equal(awaiting(pairs, 21), undefined, "a draft is Shipyard's again");
   assert.equal(awaiting(pairs, 22), undefined, "review was never requested");
   assert.ok(pairs.every((p) => p.approval === undefined), "and nothing is approved on the dashboard in project mode");
 

@@ -15,20 +15,20 @@ interface SessionState {
   sessions: AgentSession[];
   /**
    * Maps pull request number → ISO timestamp of the most recent human
-   * comment yoke has read for that PR. Used in project mode to detect
+   * comment Shipyard has read for that PR. Used in project mode to detect
    * new comments that should trigger a re-queue.
    */
   lastReadPrComments?: Record<number, string>;
   /**
-   * Maps pull request number → numeric ids of comments yoke has posted on
-   * that PR. Persisted so yoke never reads or parses its own comments.
+   * Maps pull request number → numeric ids of comments Shipyard has posted on
+   * that PR. Persisted so Shipyard never reads or parses its own comments.
    */
   postedCommentIds?: Record<number, number[]>;
 }
 
 /**
  * Key under which {@link SessionState.postedCommentIds} was persisted before
- * the vibrator → yoke rename. Read-only: a store written under the old key is
+ * the rename from vibrator. Read-only: a store written under the old key is
  * loaded transparently and migrated to `postedCommentIds` on its next write,
  * so the ids of comments posted before the rename are never lost.
  *
@@ -247,13 +247,13 @@ export class FileSessionStore {
     });
   }
 
-  /** Returns the ids of comments yoke has posted on the given PR. */
+  /** Returns the ids of comments Shipyard has posted on the given PR. */
   async getPostedCommentIds(pullRequestNumber: number): Promise<number[]> {
     const state = await this.loadState();
     return state.postedCommentIds?.[pullRequestNumber] ?? [];
   }
 
-  /** Records a comment id yoke has posted on the given PR. */
+  /** Records a comment id Shipyard has posted on the given PR. */
   async recordPostedCommentId(pullRequestNumber: number, commentId: number): Promise<void> {
     await this.serialize(async () => {
       const state = await this.loadState();

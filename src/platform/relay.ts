@@ -8,10 +8,10 @@ import type { Row } from "./store.js";
 /**
  * The relay: every fleet member's events, kept and passed on.
  *
- * Yoke's dashboard is drawn from the events its engine pool emits. A member
+ * Shipyard's dashboard is drawn from the events its engine pool emits. A member
  * posts those same events here; the relay keeps the ones a dashboard opened
  * later must be brought up to date with — each member's replay cache, the
- * map Yoke's dashboard server holds in memory, as rows of the table — and
+ * map Shipyard's dashboard server holds in memory, as rows of the table — and
  * pushes every one of them to the consoles that are open now.
  *
  * Rows: `CACHE#<memberId>/<cache key>`. The platform's own reading of the

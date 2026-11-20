@@ -16,14 +16,14 @@ import { actionVerb, STAGES, type StatusTone, type WorkView } from './work-view.
  * - `fleet`: on Shipyard's dashboard, what is stopping work across the fleet:
  *   a subscribed repository no member is assigned, a member assigned nothing,
  *   a member with work that is not there to do it.
- * - `disk`: the disk yoke keeps its checkouts on is short of space even after
+ * - `disk`: the disk Shipyard keeps its checkouts on is short of space even after
  *   every idle checkout was removed, so no new work starts until someone makes
  *   room (#288).
  * - `keep-awake`: the browser refused to play the keep-awake loop; one tap
  *   starts it (#246).
  * - `approval`: a PR parked by the `review` label, to approve and merge here
  *   (#274), and every approval under way until its PR has merged (#276, #278).
- * - `review`: a PR yoke has asked a person to review on GitHub (Project SDLC).
+ * - `review`: a PR Shipyard has asked a person to review on GitHub (Project SDLC).
  * - `failure`: an action an engine ran that failed, until an engine takes the
  *   work up again or the card is dismissed.
  *
@@ -160,7 +160,7 @@ function approvalCards(works: readonly WorkView[]): InboxCard[] {
   return cards;
 }
 
-/** A card for every PR yoke has asked a person to review on GitHub. */
+/** A card for every PR Shipyard has asked a person to review on GitHub. */
 function reviewCards(works: readonly WorkView[]): InboxCard[] {
   const cards: InboxCard[] = [];
   for (const work of works) {
@@ -181,7 +181,7 @@ function reviewCards(works: readonly WorkView[]): InboxCard[] {
         type: 'open',
         href: work.prUrl,
         label: `Review PR #${pr.number}`,
-        hint: `Open PR #${pr.number} on GitHub: yoke carries on once it is merged, commented on or returned to draft`,
+        hint: `Open PR #${pr.number} on GitHub: Shipyard carries on once it is merged, commented on or returned to draft`,
       },
       links: workLinks(work).filter((link) => link.href !== work.prUrl),
       dismissible: false,
@@ -202,7 +202,7 @@ function failedWork(failure: ActionFailure, works: readonly WorkView[]): WorkVie
 }
 
 /**
- * A card for every action that failed and has not been taken up again. Yoke
+ * A card for every action that failed and has not been taken up again. Shipyard
  * retries a failed action by itself, so there is nothing a person must do —
  * but a failure used to be one red line scrolling out of a four-line log, and
  * a person who wants to look should not have to catch it going by.
@@ -234,7 +234,7 @@ function failureCards(
       repo: failure.repo,
       title: failure.prTitle || failure.issueTitle || work?.title || 'an action',
       facts,
-      line: { text: `${failure.error} — yoke retries it`, tone: 'problem' },
+      line: { text: `${failure.error} — Shipyard retries it`, tone: 'problem' },
       action: null,
       links,
       dismissible: true,
@@ -272,7 +272,7 @@ function fleetCards(notices: readonly FleetNoticeCard[] | undefined): InboxCard[
 }
 
 /**
- * The card for a disk too full to start new work on (#288). Yoke has already
+ * The card for a disk too full to start new work on (#288). Shipyard has already
  * removed every checkout it could, so only a person can make room; work under
  * way carries on, and new work starts by itself once there is enough.
  */
@@ -289,7 +289,7 @@ function diskCards(disk: DiskSpace | null | undefined): InboxCard[] {
     title: `${formatBytes(disk.freeBytes)} free — new work is on hold`,
     facts: [`needs ${formatBytes(disk.minFreeBytes)}`, disk.path].filter(Boolean),
     line: {
-      text: 'every idle checkout is already removed — free some space and yoke resumes by itself',
+      text: 'every idle checkout is already removed — free some space and Shipyard resumes by itself',
       tone: 'problem',
     },
     action: null,

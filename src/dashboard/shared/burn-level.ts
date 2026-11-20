@@ -8,14 +8,14 @@ import type { PillActivity } from './pill-activity.js';
  * Each level is a stratum of the field, hottest at the top.
  *
  * - `burning`: an engine is running an action on it right now.
- * - `queued`: yoke burns on it next, with nothing but yoke's own pipeline in
+ * - `queued`: Shipyard burns on it next, with nothing but Shipyard's own pipeline in
  *   the way: waiting on its checks, an approved merge, an open PR or a ready
  *   issue waiting its turn for an engine.
  * - `waiting`: parked until someone moves first: a human reviewer, the
  *   issues blocking it, or — on Shipyard — an operator to assign its
  *   repository to a fleet member.
  * - `cold`: nothing is coming: an engine's action has ended (done, failed,
- *   shut down), the PR is manual, merged, or out of the queue, or yoke has
+ *   shut down), the PR is manual, merged, or out of the queue, or Shipyard has
  *   shut down.
  *
  * Only `burning` is drawn in the work's own hue (#286). The rainbow of issue
@@ -52,7 +52,7 @@ export const DIMMED_OPACITY = 0.4;
 
 /**
  * The opacity a piece of work is drawn at, at a level (#290): whole while it
- * burns or is queued — what yoke is spending tokens on now or next — and
+ * burns or is queued — what Shipyard is spending tokens on now or next — and
  * `DIMMED_OPACITY` while it waits. Cold work, which nothing is coming for, is
  * dimmed the same: it shares a project's group with the waiting work, and a
  * cold line drawn whole would stand out above it; its own smaller, dimmer
@@ -77,7 +77,7 @@ export function cylinderColor(cyl: Pick<CylinderState, 'color' | 'colorRgb'>): I
 /**
  * A lifecycle pill's level, from its activity (the status icon) and, when it
  * has none, from where its work stands. A dark pill is cold whatever it was
- * doing: no engine starts new work once yoke is shutting down (issue #268).
+ * doing: no engine starts new work once Shipyard is shutting down (issue #268).
  */
 export function pillBurnLevel(
   pair: LifecyclePair,

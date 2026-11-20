@@ -82,7 +82,7 @@ export class EventEmitter {
         listener(event);
       } catch (error) {
         process.stderr.write(
-          `[yoke] event listener for "${type}" threw: ${
+          `[shipyard] event listener for "${type}" threw: ${
             error instanceof Error ? (error.stack ?? error.message) : String(error)
           }\n`,
         );

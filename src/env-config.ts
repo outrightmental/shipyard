@@ -42,7 +42,7 @@ export interface ProjectEnvConfig {
   checkout_retention_hours?: number;
   /** @deprecated Use the top-level `dashboard_port` instead. Honoured only as a fallback. */
   dashboard_port?: number;
-  /** Path for persisted agent-session state. Defaults to .yoke/<owner>-<repo>-sessions.json. */
+  /** Path for persisted agent-session state. Defaults to .shipyard/<owner>-<repo>-sessions.json. */
   session_store_path?: string;
 }
 
@@ -76,7 +76,7 @@ export interface EnvConfig {
    */
   checkout_retention_hours?: number;
   /**
-   * Free space, in GB, below which yoke evicts idle checkouts least recently
+   * Free space, in GB, below which Shipyard evicts idle checkouts least recently
    * used first, and holds new work if that is not enough (default: 10). Global
    * only: every project's checkouts share the one disk. 0 turns it off.
    */

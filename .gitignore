@@ -4,7 +4,7 @@ node_modules/
 env.yaml
 
 # Local runtime files
-.yoke/
+.shipyard/
 
 # Python bytecode from tools/
 __pycache__/

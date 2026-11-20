@@ -1,7 +1,7 @@
 import { LitElement, html, nothing } from 'lit';
 import { fleetNotices, type FleetNotice } from '../../shared/notices.js';
 import { shortCommit } from '../../shared/release.js';
-import '../components/yoke-app.js';
+import '../components/shipyard-dashboard.js';
 import type { Api } from './api.js';
 import type { Auth } from './auth.js';
 import './fleet-page.js';
@@ -49,7 +49,7 @@ export function noticeCounts(notices: readonly FleetNotice[]): Record<Page, numb
  * The console: a menu down the left-hand edge that folds to its icons, and
  * the page beside it.
  *
- * The dashboard is Yoke's, unchanged in how it is drawn — the field, and the
+ * The dashboard is Shipyard's, unchanged in how it is drawn — the field, and the
  * inbox down its right-hand edge — for the whole fleet at once. Fleet and
  * Repositories are where the fleet is set up: which machines there are, which
  * repositories Shipyard is subscribed to, and who works each.
@@ -169,7 +169,7 @@ export class ShipyardApp extends LitElement {
       case 'repositories':
         return html`<shipyard-repos class="console-page" .store=${this.store} .api=${this.api}></shipyard-repos>`;
       default:
-        return html`<div class="console-page console-dashboard"><yoke-app .store=${this.store}></yoke-app></div>`;
+        return html`<div class="console-page console-dashboard"><shipyard-dashboard .store=${this.store}></shipyard-dashboard></div>`;
     }
   }
 

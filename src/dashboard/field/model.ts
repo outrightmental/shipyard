@@ -14,7 +14,7 @@ import { compareProjectWork, workViews, type WorkView } from '../shared/work-vie
  * The field is a thermal picture of the run. What an engine is burning on
  * (`BurnLevel`, #281) is at the top with the most room: a reactor each.
  * Everything else is below, grouped by the project it belongs to (#290), and
- * within each project hottest first — what yoke works next drawn whole, then
+ * within each project hottest first — what Shipyard works next drawn whole, then
  * what waits on someone else and what nothing is coming for, dimmed. Nothing
  * has a box of fixed size to be fitted into — a piece of work takes the room
  * its state has earned, and gives it up when the state changes.
@@ -49,7 +49,7 @@ export interface FieldModel {
   selection: Selection | null;
   /** True when work is labelled with its project, because several share the dashboard. */
   multiProject: boolean;
-  /** Yoke is shutting down: every piece of work has gone dark (#268). */
+  /** Shipyard is shutting down: every piece of work has gone dark (#268). */
   dark: boolean;
   /** Whether a first lifecycle has arrived yet; until then there is nothing to say. */
   loaded: boolean;
@@ -112,7 +112,7 @@ export interface Stratum {
 
 /**
  * The level a piece of work is drawn at below the reactors: its own. Work
- * that is `burning` with no engine cannot happen while yoke runs, and is
+ * that is `burning` with no engine cannot happen while Shipyard runs, and is
  * drawn as queued if it ever does rather than dropped.
  */
 export function stratumLevel(work: WorkView): StratumLevel {
@@ -141,7 +141,7 @@ export interface RibbonLine {
 
 /**
  * What the line between a piece of work and its inbox card is saying:
- * `waiting` on a person; `sent`, an approval on its way to yoke; `working`, an
+ * `waiting` on a person; `sent`, an approval on its way to Shipyard; `working`, an
  * engine carrying it out; `done`; a `problem`; or `selected`, the work a
  * person picked out to read about.
  */
@@ -308,7 +308,7 @@ export function fieldModel(
     bench,
     crews,
     notes: state.fleet === null
-      ? { loading: 'Connecting to yoke…', empty: 'No open issues or pull requests.' }
+      ? { loading: 'Connecting to Shipyard…', empty: 'No open issues or pull requests.' }
       : { loading: 'Reading the fleet…', empty: 'No open issues or pull requests in the repositories Shipyard is subscribed to.' },
     strata,
     works,

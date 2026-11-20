@@ -70,7 +70,7 @@ export interface FleetMember {
   connected: boolean;
 }
 
-/** Per-repository settings a member applies to its work on it. All optional: Yoke's defaults otherwise. */
+/** Per-repository settings a member applies to its work on it. All optional: Shipyard's defaults otherwise. */
 export interface RepoSettings {
   /** How many of the member's engines may work this repository at once. */
   maxConcurrency?: number;

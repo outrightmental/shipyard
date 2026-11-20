@@ -4,7 +4,7 @@
  * Starts the real Dashboard server and feeds it the events a real run emits,
  * from a small simulation of the loop: engines plan, implement, review, fix
  * checks and squash-merge a made-up backlog across four made-up projects, and
- * an Approve press on the page is answered the way yoke answers one. Nothing
+ * an Approve press on the page is answered the way Shipyard answers one. Nothing
  * touches GitHub or Claude, so the page can be worked on — and screenshotted —
  * without a token, a backlog, or an hour of waiting for something to happen.
  *
@@ -281,7 +281,7 @@ const engines: DemoEngine[] = Array.from({ length: ENGINES }, (_, index) => ({
   wakeAtMs: Date.now() + span(0.2, 2.5),
 }));
 const claimed = new Set<string>();
-/** Work whose last run failed, and when it may be tried again: yoke backs a
+/** Work whose last run failed, and when it may be tried again: Shipyard backs a
  *  failed action off rather than throw the next free engine at it. */
 const coolingUntil = new Map<string, number>();
 let nextNumber = 700;
@@ -412,7 +412,7 @@ function plan(): DemoAction | null {
         ({ type, project, issue: linked, pullRequest: pr, model, doneAtMs: duration(low, high) });
       if (pr.checks === "pending") continue;
       if (pr.checks === "failure") {
-        // Yoke fixes failing checks itself — but never on a PR parked for a person.
+        // Shipyard fixes failing checks itself — but never on a PR parked for a person.
         if (pr.approval === "awaiting-approval") continue;
         return make("address-failing-checks", INITIAL_MODEL, 22, 60);
       }
@@ -509,8 +509,8 @@ function finishAction(engine: DemoEngine): void {
         startChecks(pr!);
         emitter.emit("broadcast-commit", {
           hash: Math.floor(random() * 0xfffffff).toString(16).padStart(7, "0") + "c0ffee1",
-          author: "yoke", message: `Address self-review of #${pr!.number}`,
-          stateBefore: "Branch was at previous commit", changeHow: "yoke pushed review fixes",
+          author: "Shipyard", message: `Address self-review of #${pr!.number}`,
+          stateBefore: "Branch was at previous commit", changeHow: "Shipyard pushed review fixes",
           stateAfter: `Branch advanced: "Address self-review of #${pr!.number}"`,
           excellence: "", repo: project.repo,
         });
@@ -728,7 +728,7 @@ const ticker = setInterval(() => {
 }, 250);
 const usageTicker = setInterval(emitUsage, 5000);
 
-/** Stop the way yoke does: finish what is in flight, start nothing new, then exit. */
+/** Stop the way Shipyard does: finish what is in flight, start nothing new, then exit. */
 function shutdown(): void {
   if (stopping) {
     process.exit(0);

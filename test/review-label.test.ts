@@ -514,7 +514,7 @@ test("buildPlan re-reviews an approved PR converted back to draft or commented o
 });
 
 test("buildPlan carries an approval through the work done after it: the PR merges, never back for approval (#278)", () => {
-  // Approved, then yoke fixed its failing checks and re-reviewed it clean.
+  // Approved, then Shipyard fixed its failing checks and re-reviewed it clean.
   const snapshot = parkedSnapshot({
     approved: true,
     sessions: [
@@ -585,7 +585,7 @@ test("buildPlan merges an approved PR parked by a review request made after the 
   assert.equal(reviewApprovalState(snapshot.pullRequests[0]!, snapshot), "approved");
 });
 
-test("reviewApprovalState: an approved PR stays approved while yoke works on it (#278)", () => {
+test("reviewApprovalState: an approved PR stays approved while Shipyard works on it (#278)", () => {
   for (const snapshot of [
     parkedSnapshot({ approved: true, pullRequest: { draft: true } }),
     parkedSnapshot({ approved: true, pullRequest: { hasMergeConflicts: true } }),
@@ -622,7 +622,7 @@ test("reviewApprovalState: an approved PR reads approved until its merge", () =>
   assert.equal(reviewApprovalState(snapshot.pullRequests[0]!, snapshot), "approved");
 });
 
-test("reviewApprovalState: nothing is awaited from a PR yoke would act on, or that no label holds back", () => {
+test("reviewApprovalState: nothing is awaited from a PR Shipyard would act on, or that no label holds back", () => {
   const cases: Array<[string, RepositorySnapshot, boolean?]> = [
     ["no review label anywhere", parkedSnapshot({ issueLabels: [], pullRequest: { labels: [] } })],
     ["converted back to draft", parkedSnapshot({ pullRequest: { draft: true } })],
@@ -674,7 +674,7 @@ test("awaitsHumanReview: outside project mode nothing does — a parked PR is ap
   assert.equal(reviewApprovalState(snapshot.pullRequests[0]!, snapshot), "awaiting-approval");
 });
 
-test("awaitsHumanReview: a PR yoke would act on is not waiting on anyone, and the planner agrees", () => {
+test("awaitsHumanReview: a PR Shipyard would act on is not waiting on anyone, and the planner agrees", () => {
   const projectMode = { projectNumber: 1, reviewers: [] };
   const cases: Array<[string, RepositorySnapshot]> = [
     ["converted back to draft", parkedSnapshot({ pullRequest: { draft: true } })],
@@ -689,7 +689,7 @@ test("awaitsHumanReview: a PR yoke would act on is not waiting on anyone, and th
   ];
   for (const [description, snapshot] of cases) {
     assert.equal(awaitsHumanReview(snapshot.pullRequests[0]!, snapshot, true), false, description);
-    assert.equal(buildPlan(snapshot, 3, projectMode).actions.length, 1, `${description}: yoke plans work on it`);
+    assert.equal(buildPlan(snapshot, 3, projectMode).actions.length, 1, `${description}: Shipyard plans work on it`);
   }
 
   // And the ones it awaits are the ones the planner leaves alone.
@@ -801,17 +801,17 @@ test("approvePullRequest turns down a PR that is not parked awaiting approval, r
   }
 });
 
-test("commentOnApproval says so on the PR, and yoke never reads its own comment back as feedback", async () => {
+test("commentOnApproval says so on the PR, and Shipyard never reads its own comment back as feedback", async () => {
   const fakes = approvalFakes();
 
   await commentOnApproval(fakes.gitHubClient, fakes.sessionStore, 10, false);
   await commentOnApproval(fakes.gitHubClient, fakes.sessionStore, 11, true);
 
   assert.deepEqual(fakes.comments, [
-    { pullRequestNumber: 10, body: "Approved on the yoke dashboard. Yoke is squash-merging this PR." },
+    { pullRequestNumber: 10, body: "Approved on the Shipyard dashboard. Shipyard is squash-merging this PR." },
     {
       pullRequestNumber: 11,
-      body: "Approved on the yoke dashboard. Yoke will squash-merge this PR once its checks pass.",
+      body: "Approved on the Shipyard dashboard. Shipyard will squash-merge this PR once its checks pass.",
     },
   ]);
   assert.deepEqual(fakes.recordedCommentIds, [9001, 9001]);

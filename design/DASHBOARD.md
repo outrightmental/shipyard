@@ -76,10 +76,10 @@ A line has at most one signal, worked out with its status in `workStatus`, so th
 | Signal | Colour | When |
 | --- | --- | --- |
 | `error` | red, `--color-red` | its last action failed and no engine has taken it up again (`WorkView.failure`: until an engine takes it up again, or for 90 minutes, `FAILURE_SHOW_MS` — dismissing its inbox card does not clear it, since nothing has answered the error yet); its checks are failing; its approval was refused or failed |
-| `blocked` | orange, `--color-orange` | it is blocked by other issues — a hold, like a usage limit or a shutdown, which are orange too |
+| `blocked` | orange, `--color-orange` | it is blocked by other issues, or labelled `manual` — yoke will not move it, so it is blocked on a person — a hold, like a usage limit or a shutdown, which are orange too |
 | `review` | yellow, `--color-yellow` | it waits on a person: ready for review, or parked for an approval Yoke is asking for |
 | `approved` | turquoise, `--color-turquoise` | an approval going through: approved, and waiting for or undergoing its merge |
-| none | gray | merged; `manual`; out of the queue; checks running; waiting for an engine; implementing; an approval sent and not yet answered; shut down |
+| none | gray | merged; out of the queue; checks running; waiting for an engine; implementing; an approval sent and not yet answered; shut down |
 
 Red for an error, orange for a block and yellow for a PR awaiting review are the three the issue asked for (#286): the states the field most needs to be seen. Merged and manual are outcomes nobody has to act on here, so they stay neutral, as the issue asked too. Every further state was to take blue or turquoise next, and an approval going through is one: an approved PR waiting for its merge is worth a glance — your press took, and the merge is coming — but it is not merged yet, and is not an alarm.
 
@@ -184,7 +184,6 @@ With nothing in it the inbox folds to a strip and gives its room to the field (`
 | `approval` | a PR parked by the `review` label, and every approval under way | Approve |
 | `review` | a PR Yoke has asked a person to review on GitHub (Project SDLC) | opens it |
 | `failure` | an action that failed and has not been taken up again | none; it can be dismissed |
-| `manual` | a PR labelled `manual` | opens it |
 
 Every card has the same shape (`InboxCard`), and `<yoke-inbox>` only draws cards. **To add an interaction, write one more function that returns cards and add it to `buildInbox`**; nothing that draws the inbox needs to know of it. If its button does something new, add a variant to `InboxAction` and one `case` to the element.
 

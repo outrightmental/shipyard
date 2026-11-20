@@ -87,7 +87,7 @@ function withFailure(
 // ── the sources ──────────────────────────────────────────────────────────────
 
 test("the inbox lists its sources in one order, the most pressing first", () => {
-  assert.deepEqual([...INBOX_SOURCES], ["fleet", "disk", "keep-awake", "approval", "review", "failure", "manual"]);
+  assert.deepEqual([...INBOX_SOURCES], ["fleet", "disk", "keep-awake", "approval", "review", "failure"]);
 });
 
 test("approval: a PR parked by the review label has a card, and so has every approval under way", () => {
@@ -134,18 +134,6 @@ test("review: a PR yoke has asked a person to review on GitHub has a card that o
     label: "Review PR #10",
   });
   assert.deepEqual(cards[0]?.links, [{ label: "Issue #1", href: "https://github.com/o/a/issues/1" }], "the button is the link to the PR");
-});
-
-test("manual: a PR labelled manual is listed as a person's to deal with, until it merges", () => {
-  const state = stateWith([
-    ready(1, 10, { disabled: true }),
-    ready(2, 20, { disabled: true, prPhase: "completed" }),
-  ]);
-  const cards = buildInbox(inputFor(state));
-
-  assert.deepEqual(cards.map((card) => card.id), ["manual:o/a#1"]);
-  assert.equal(cards[0]?.eyebrow, "Manual — yours");
-  assert.equal(cards[0]?.action?.type === "open" && cards[0].action.label, "Open PR #10");
 });
 
 test("keep-awake: only a loop the browser refused to start is something to tap", () => {
@@ -293,7 +281,6 @@ test("failure: a usage limit is a hold, not a failure, and lists nothing", () =>
 
 test("order: by source, most pressing first", () => {
   let state = stateWith([
-    ready(5, 50, { disabled: true }),
     ready(4, 40, { awaitingReview: true }),
     ready(3, 30),
     parked(2, 20),
@@ -301,7 +288,7 @@ test("order: by source, most pressing first", () => {
   state = withFailure(state, { type: "self-review", pullRequestNumber: 30 });
   const cards = buildInbox(inputFor(state, { keepAwake: "blocked" }));
 
-  assert.deepEqual(cards.map((card) => card.source), ["keep-awake", "approval", "review", "failure", "manual"]);
+  assert.deepEqual(cards.map((card) => card.source), ["keep-awake", "approval", "review", "failure"]);
 });
 
 test("order: within a source the longest-waiting is on top, and a new arrival lands below the others", () => {
@@ -494,8 +481,8 @@ test("tethers: each card about a piece of work is joined to it, saying where its
   assert.deepEqual(model.tethers, [
     { cardId: "approval:o/a#10", workKey: "o/a#1", state: "waiting" },
     { cardId: "approval:o/a#20", workKey: "o/a#2", state: "sent" },
-    { cardId: "manual:o/a#3", workKey: "o/a#3", state: "waiting" },
-  ], "the keep-awake card is about no work, and work with a card needs no second line to the inspector");
+    { cardId: INSPECTOR_CARD_ID, workKey: "o/a#3", state: "selected" },
+  ], "the keep-awake card is about no work; a manual PR has no inbox card so it goes to the inspector when selected");
 
   const picked = fieldModel(state, NOW, { cards: [], selection: { kind: "work", key: "o/a#1" } });
   assert.deepEqual(picked.tethers, [{ cardId: INSPECTOR_CARD_ID, workKey: "o/a#1", state: "selected" }]);

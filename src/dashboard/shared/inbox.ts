@@ -409,27 +409,6 @@ export function buildInbox(input: InboxInput): InboxCard[] {
     pinned(a) - pinned(b) || rank(a) - rank(b) || arrived(a) - arrived(b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
-/** The ids of the "Approval queued" cards in a list — the ones pinned to the
- *  top. Tracked between renders so a card that becomes queued can be told from
- *  one that already was (see `hasNewQueuedApproval`). */
-export function queuedApprovalIds(cards: readonly InboxCard[]): string[] {
-  return cards.filter(isPinnedCard).map((card) => card.id);
-}
-
-/**
- * Whether a card in `nextCards` is "Approval queued" that was not queued in the
- * previous render — its id is absent from `prevQueuedIds` (from
- * `queuedApprovalIds`). This is true both for a brand-new queued card and for
- * one that just transitioned into "Approval queued" in place, keeping its id:
- * an approval card's id does not change as its step goes idle → queued, so
- * tracking which ids were queued, not merely which were present, is what
- * catches the press that queues an approval. Used by the inbox component to
- * decide whether to scroll the list to the top so the newly pinned card shows.
- */
-export function hasNewQueuedApproval(prevQueuedIds: ReadonlySet<string>, nextCards: readonly InboxCard[]): boolean {
-  return nextCards.some((card) => isPinnedCard(card) && !prevQueuedIds.has(card.id));
-}
-
 /**
  * A card as a fleet member's own screen shows it: the same card, saying the
  * same thing, with no button — decisions are made in Shipyard. A PR waiting

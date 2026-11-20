@@ -364,6 +364,14 @@ export async function installationToken(p: Platform, repos?: readonly string[]):
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
     // 404: the installation is gone. 422: a repository named is not one it can see.
+    if (res.status === 422 && repos && repos.length > 0) {
+      // Which one, GitHub does not say. Finding out must never be what fails:
+      // if it cannot be found out, GitHub's own words are passed on below.
+      const refused = await refusedRepos(p, repos).catch(() => [] as RefusedRepo[]);
+      if (refused.length > 0) {
+        return refuse(502, "GITHUB_REPO_NOT_INSTALLED", `GitHub would not mint a token: ${refusedLine(refused)}`, refusedRemedy(refused));
+      }
+    }
     return refuse(
       502,
       res.status === 422 ? "GITHUB_REPO_NOT_INSTALLED" : "GITHUB_REFUSED",
@@ -377,11 +385,18 @@ export async function installationToken(p: Platform, repos?: readonly string[]):
   return { token: body.token, expiresAt: body.expires_at };
 }
 
-/** Every repository the installation can see, by name. */
-export async function listAvailableRepos(p: Platform): Promise<AvailableRepo[]> {
-  const { token } = await installationToken(p);
+/** As many pages of a hundred as are read of the installation's repositories. */
+const REPO_PAGES = 20;
+
+/**
+ * The repositories a token for the installation reaches, by name, and whether
+ * that is all of them: an installation with more than are read is not known
+ * to be without the ones that were not.
+ */
+async function reposSeenWith(p: Platform, token: string): Promise<{ repos: AvailableRepo[]; all: boolean }> {
   const repos: AvailableRepo[] = [];
-  for (let page = 1; page <= 20; page++) {
+  let all = false;
+  for (let page = 1; page <= REPO_PAGES; page++) {
     const res = await p.fetch(`${GITHUB_API}/installation/repositories?per_page=100&page=${page}`, { headers: githubHeaders(token) });
     if (!res.ok) return refuse(502, "GITHUB_REFUSED", `GitHub would not list the installation's repositories (${res.status})`);
     const body = await res.json() as {
@@ -397,9 +412,90 @@ export async function listAvailableRepos(p: Platform): Promise<AvailableRepo[]> 
         htmlUrl: repo.html_url,
       });
     }
-    if (body.repositories.length < 100) break;
+    if (body.repositories.length < 100) {
+      all = true;
+      break;
+    }
   }
-  return repos.sort((a, b) => (a.repo.toLowerCase() < b.repo.toLowerCase() ? -1 : 1));
+  return { repos: repos.sort((a, b) => (a.repo.toLowerCase() < b.repo.toLowerCase() ? -1 : 1)), all };
+}
+
+/** Every repository the installation can see, by name. */
+export async function listAvailableRepos(p: Platform): Promise<AvailableRepo[]> {
+  const { token } = await installationToken(p);
+  return (await reposSeenWith(p, token)).repos;
+}
+
+// ── Which repository a token was refused for ─────────────────────────────────
+
+/**
+ * A repository GitHub would not mint a token for, and the name it has now if
+ * the one asked for is a name it was renamed from.
+ *
+ * GitHub mints nothing for a list with one name in it that the installation
+ * cannot see, and says only that there is "at least one". On 2026-11-20 that
+ * was all a fleet member's note could say, of five repositories; by the time
+ * an operator read it the one at fault had been taken away, and the four that
+ * were left were looked over and found to be in order. It had been subscribed
+ * to by a name it no longer had: the app could see the repository, not by
+ * that name, and nothing about the installation needed changing.
+ */
+interface RefusedRepo {
+  repo: string;
+  now: string | null;
+}
+
+/** At most this many are named in one line: a note is short. */
+const REFUSED_NAMED = 4;
+
+/**
+ * Which of `repos` the installation cannot see. Asked of GitHub with a token
+ * for the whole installation, which is minted whatever was asked for before.
+ * Empty when every one of them is there to be seen, or when not all of the
+ * installation's repositories could be read.
+ */
+async function refusedRepos(p: Platform, repos: readonly string[]): Promise<RefusedRepo[]> {
+  const { token } = await installationToken(p);
+  const { repos: seen, all } = await reposSeenWith(p, token);
+  if (!all) return [];
+  const names = new Set(seen.map((repo) => repo.repo.toLowerCase()));
+  const refused = repos.filter((repo) => !names.has(repo.toLowerCase()));
+  return Promise.all(refused.map(async (repo) => ({ repo, now: await nameNow(p, token, repo) })));
+}
+
+/**
+ * What a repository asked for by `repo` is called now, when that is something
+ * else: GitHub answers a read of a name a repository was renamed from as the
+ * repository it now is. Null when it is called that, is not there, or cannot be asked.
+ */
+async function nameNow(p: Platform, token: string, repo: string): Promise<string | null> {
+  try {
+    const res = await p.fetch(`${GITHUB_API}/repos/${repo}`, { headers: githubHeaders(token) });
+    if (!res.ok) return null;
+    const body = await res.json() as { full_name?: unknown };
+    const name = typeof body.full_name === "string" ? body.full_name : "";
+    return name && name.toLowerCase() !== repo.toLowerCase() ? name : null;
+  } catch {
+    return null;
+  }
+}
+
+function refusedLine(refused: readonly RefusedRepo[]): string {
+  const named = refused.slice(0, REFUSED_NAMED).map(({ repo, now }) =>
+    now ? `${repo} is called ${now} now` : `${repo} is not a repository the app can see`);
+  const more = refused.length - named.length;
+  return more > 0 ? `${named.join("; ")}; and ${more} more` : named.join("; ");
+}
+
+function refusedRemedy(refused: readonly RefusedRepo[]): string {
+  const remedies: string[] = [];
+  if (refused.some((repo) => repo.now !== null)) {
+    remedies.push("unsubscribe from a repository that was renamed and subscribe to it under the name it has now");
+  }
+  if (refused.some((repo) => repo.now === null)) {
+    remedies.push("add a repository the app cannot see on GitHub, in the app's installation settings, or unsubscribe from it");
+  }
+  return remedies.join("; ");
 }
 
 // ── Webhooks ─────────────────────────────────────────────────────────────────

@@ -615,7 +615,7 @@ const { privateKey: APP_KEY, publicKey: APP_PUBLIC } = generateKeyPairSync("rsa"
 const APP_PEM = APP_KEY.export({ type: "pkcs1", format: "pem" }).toString();
 
 /** A GitHub that has one app, installed on acme, seeing two repositories. */
-function fakeGithub(t: ReturnType<typeof testPlatform>, options: { installed?: boolean } = {}) {
+function fakeGithub(t: ReturnType<typeof testPlatform>, options: { installed?: boolean; listing?: boolean } = {}) {
   const minted: Array<{ repositories?: string[] }> = [];
   t.onFetch((url, init) => {
     if (url.endsWith("/app-manifests/the-code/conversions")) {
@@ -631,10 +631,16 @@ function fakeGithub(t: ReturnType<typeof testPlatform>, options: { installed?: b
     if (url.endsWith("/app/installations/99/access_tokens")) {
       const body = JSON.parse(init.body || "{}") as { repositories?: string[] };
       minted.push(body);
-      if (body.repositories?.includes("not-installed")) return new Response("{}", { status: 422 });
+      // One name it cannot see among them, and GitHub mints nothing for the lot. It does not say which.
+      if (body.repositories?.some((name) => name === "not-installed" || name === "formerly-widgets")) {
+        return new Response(JSON.stringify({ message: "There is at least one repository that does not exist or is not accessible to the parent installation." }), { status: 422 });
+      }
       return new Response(JSON.stringify({ token: `ghs_${minted.length}`, expires_at: "2026-11-15T13:00:00Z" }), { status: 201 });
     }
+    // A name a repository was renamed from still answers a read, as the repository it now is.
+    if (url.endsWith("/repos/acme/formerly-widgets")) return { full_name: "acme/widgets" };
     if (url.includes("/installation/repositories")) {
+      if (options.listing === false) return new Response("{}", { status: 500 });
       return {
         repositories: [
           { full_name: "acme/widgets", private: true, archived: false, description: "Widgets", default_branch: "main", html_url: "https://github.com/acme/widgets" },
@@ -783,6 +789,63 @@ test("a repository the app is not installed on is said, not passed over", async 
   const res = await call(t, "POST", "/fleet/github-token", {}, { token: atlas.token });
   assert.equal(res.status, 502);
   assert.equal(res.body["code"], "GITHUB_REPO_NOT_INSTALLED");
+  assert.match(String(res.body["remedy"]), /installation settings/);
+});
+
+test("a token GitHub will not mint names the repository it will not mint for, and what that is called now", async () => {
+  const t = testPlatform();
+  fakeGithub(t);
+  await connectGithub(t);
+  await call(t, "POST", "/api/github/refresh");
+  const atlas = await enrollMachine(t, "atlas");
+  const ask = () => call(t, "POST", "/fleet/github-token", {}, { token: atlas.token });
+  await call(t, "PUT", "/api/repos/acme/widgets", { memberId: atlas.memberId });
+  await call(t, "PUT", "/api/repos/acme/Gadgets", { memberId: atlas.memberId });
+
+  // One the app is not installed on, among two it is: GitHub says only "at least one". Shipyard says which.
+  await call(t, "PUT", "/api/repos/acme/not-installed", { memberId: atlas.memberId });
+  let res = await ask();
+  assert.equal(res.status, 502);
+  assert.equal(res.body["error"], "GitHub would not mint a token: acme/not-installed is not a repository the app can see");
+  assert.match(String(res.body["remedy"]), /installation settings/);
+  await call(t, "DELETE", "/api/repos/acme/not-installed");
+
+  // One subscribed to by a name it has been renamed from. The app can see the repository; not by that name.
+  await call(t, "PUT", "/api/repos/acme/formerly-widgets", { memberId: atlas.memberId });
+  res = await ask();
+  assert.equal(res.status, 502);
+  assert.equal(res.body["code"], "GITHUB_REPO_NOT_INSTALLED");
+  assert.equal(res.body["error"], "GitHub would not mint a token: acme/formerly-widgets is called acme/widgets now");
+  assert.match(String(res.body["remedy"]), /under the name it has now/);
+  assert.doesNotMatch(String(res.body["remedy"]), /installation settings/, "the app is installed where it should be: nothing there needs changing");
+
+  // Both at once: each is named, with what is wrong with it, and neither of the two that are fine.
+  await call(t, "PUT", "/api/repos/acme/not-installed", { memberId: atlas.memberId });
+  res = await ask();
+  assert.equal(
+    res.body["error"],
+    "GitHub would not mint a token: acme/formerly-widgets is called acme/widgets now; acme/not-installed is not a repository the app can see",
+  );
+  assert.match(String(res.body["remedy"]), /under the name it has now/);
+  assert.match(String(res.body["remedy"]), /installation settings/);
+
+  // Taken away, the member is minted its token again.
+  await call(t, "DELETE", "/api/repos/acme/not-installed");
+  await call(t, "DELETE", "/api/repos/acme/formerly-widgets");
+  assert.equal((await ask()).status, 200);
+});
+
+test("when which repository cannot be found out, GitHub's own words are passed on as they were", async () => {
+  const t = testPlatform();
+  fakeGithub(t, { listing: false });
+  await connectGithub(t);
+  await call(t, "POST", "/api/github/refresh");
+  const atlas = await enrollMachine(t, "atlas");
+  await call(t, "PUT", "/api/repos/acme/not-installed", { memberId: atlas.memberId });
+  const res = await call(t, "POST", "/fleet/github-token", {}, { token: atlas.token });
+  assert.equal(res.status, 502);
+  assert.equal(res.body["code"], "GITHUB_REPO_NOT_INSTALLED");
+  assert.match(String(res.body["error"]), /^GitHub would not mint a token \(422\): .*at least one repository/);
   assert.match(String(res.body["remedy"]), /installation settings/);
 });
 

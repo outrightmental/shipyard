@@ -1,4 +1,3 @@
-<<<<<<<< HEAD:design/ENGINE.md
 > **This is the account of the engine every Shipyard fleet member runs.**
 > The engine does on one machine, from an `env.yaml`, what the Shipyard platform does for a fleet: how an issue is worked,
 > the labels and dependency phrases it understands, the review loop and both SDLCs are all described
@@ -10,21 +9,6 @@
 **A team of coding agents working through a GitHub issue queue.**
 
 Shipyard's engine is a TypeScript orchestrator that closes the loop on agentic software development. Write issues. Shipyard handles the rest: it picks up each issue, asks Claude to implement it in a local checkout, opens a draft pull request, self-reviews the diff, fixes anything that needs fixing — review comments, merge conflicts, failing CI — writes a polished final description, and squash-merges. Then it moves on to the next issue.
-========
-> **This is Shipyard's own README**, kept here as the account of the engine every Shipyard fleet member runs.
-> Shipyard does on one machine, from an `env.yaml`, what Shipyard does for a fleet: how an issue is worked,
-> the labels and dependency phrases it understands, the review loop and both SDLCs are all described
-> below, and are the same on a fleet member. What differs on a fleet member is where its orders come
-> from — see [Shipyard's README](../README.md). Shipyard run by hand still works exactly as written here.
-
-[![Test](https://github.com/outrightmental/Shipyard/actions/workflows/test.yml/badge.svg)](https://github.com/outrightmental/Shipyard/actions/workflows/test.yml)
-
-# Shipyard
-
-**Shipyard a team of coding agents to work through a GitHub issue queue.**
-
-`shipyard` is a TypeScript orchestrator that closes the loop on agentic software development. Write issues. Shipyard handles the rest: it picks up each issue, asks Claude to implement it in a local checkout, opens a draft pull request, self-reviews the diff, fixes anything that needs fixing — review comments, merge conflicts, failing CI — writes a polished final description, and squash-merges. Then it moves on to the next issue.
->>>>>>>> 2ba45e0 (Rename every remaining yoke reference to shipyard (#27)):design/SHIPYARD.md
 
 It is for developers who want the creative part of software development — expressing intent and reviewing outcomes — without babysitting every agent handoff.
 
@@ -34,11 +18,7 @@ It is for developers who want the creative part of software development — expr
 
 Modern coding agents are powerful, but they still need a conductor — someone to decide what starts next, avoid overloading the repo, notice blocked tasks, run a review pass, route fixes back for another round, preserve closing references, and merge the finished work.
 
-<<<<<<<< HEAD:design/ENGINE.md
 Shipyard makes that conductor programmable and autonomous, with Claude as the worker behind every step.
-========
-`shipyard` makes that conductor programmable and autonomous, with Claude as the worker behind every step.
->>>>>>>> 2ba45e0 (Rename every remaining yoke reference to shipyard (#27)):design/SHIPYARD.md
 
 Give your repository a prioritized issue backlog and run the loop. The project becomes a living assembly line:
 
@@ -134,11 +114,7 @@ This mode suits teams where a human QA or architect approves each merge, while S
 
 ## What it does
 
-<<<<<<<< HEAD:design/ENGINE.md
 On every iteration, Shipyard:
-========
-On every iteration, `shipyard`:
->>>>>>>> 2ba45e0 (Rename every remaining yoke reference to shipyard (#27)):design/SHIPYARD.md
 
 1. Loads open GitHub issues, open pull requests, pending workflow approvals, and local agent-session state.
 2. Builds a dependency-aware work plan from issue age plus relationships like `blocked by #123`, `depends on #123`, and `blocks #123`.
@@ -149,11 +125,7 @@ On every iteration, `shipyard`:
 7. Asks Claude to self-review the diff and push fixes if needed. Requires two consecutive clean self-reviews before advancing.
 8. Generates a polished final PR description with Claude, updates the PR body, preserves closing references, and squash-merges. Retries with `--admin` if GitHub's branch policy requires it.
 
-<<<<<<<< HEAD:design/ENGINE.md
 When the Claude CLI reports that the subscription's usage limit is exhausted, Shipyard reads the reset time out of the CLI's own message and treats it as a hard hold on the whole engine pool: nothing is planned, claimed, checked out or run until it passes, and work resumes by itself the moment it does. GitHub-only maintenance (workflow approvals, reconciliation, the activity feed) keeps running throughout.
-========
-When the Claude CLI reports that the subscription's usage limit is exhausted, `shipyard` reads the reset time out of the CLI's own message and treats it as a hard hold on the whole engine pool: nothing is planned, claimed, checked out or run until it passes, and work resumes by itself the moment it does. GitHub-only maintenance (workflow approvals, reconciliation, the activity feed) keeps running throughout.
->>>>>>>> 2ba45e0 (Rename every remaining yoke reference to shipyard (#27)):design/SHIPYARD.md
 
 The hold is said once, not once per engine per cycle:
 
@@ -164,11 +136,7 @@ GitHub rate-limit holds get the same treatment.
 
 ## The big idea
 
-<<<<<<<< HEAD:design/ENGINE.md
 Shipyard treats GitHub as the source of truth and Claude as the worker behind every action:
-========
-`shipyard` treats GitHub as the source of truth and Claude as the worker behind every action:
->>>>>>>> 2ba45e0 (Rename every remaining yoke reference to shipyard (#27)):design/SHIPYARD.md
 
 - **Issues are intent.** Write clear issues and dependencies; the loop decides when they are safe to start.
 - **Pull requests are work cells.** Each PR moves through review, fix, re-review, and merge phases automatically.
@@ -220,11 +188,7 @@ Shipyard loads `env.yaml` from the current working directory and works every rep
 
 ## Dashboard
 
-<<<<<<<< HEAD:design/ENGINE.md
 Shipyard opens a single real-time **Dashboard** in your browser at `http://localhost:3000` (change the port with `dashboard_port`) when the loop starts. One dashboard covers **all** configured projects: there is a single shared pool of `max_concurrency` engines, and each project's own `max_concurrency` caps how many of those engines may work it at once. When more than one project is configured, every piece of work, inbox card, feed card, and event-log line is labelled with the project (`owner/repo`) it belongs to; with a single project the name appears at the top only.
-========
-`shipyard` opens a single real-time **Dashboard** in your browser at `http://localhost:3000` (change the port with `dashboard_port`) when the loop starts. One dashboard covers **all** configured projects: there is a single shared pool of `max_concurrency` engines, and each project's own `max_concurrency` caps how many of those engines may work it at once. When more than one project is configured, every piece of work, inbox card, feed card, and event-log line is labelled with the project (`owner/repo`) it belongs to; with a single project the name appears at the top only.
->>>>>>>> 2ba45e0 (Rename every remaining yoke reference to shipyard (#27)):design/SHIPYARD.md
 
 The Dashboard is two things. **The field** is one canvas the size of the window, on which the state of the whole run is drawn. **The inbox** runs down its right-hand edge, top to bottom, and holds everything you can *do* about it. There are no panels: nothing has a box of fixed size to be fitted into.
 
@@ -282,12 +246,8 @@ It is federated: each kind of thing that needs a person comes from its own sourc
 - **Approve to merge** — a PR parked by the [`review` label](#the-review-label), with an **Approve** button (below).
 - **Ready for your review** — in [Project SDLC](#project-sdlc-human-in-the-loop), a PR Shipyard has asked a person to review on GitHub, with a button that opens it there.
 - **Failed …** — an action an engine ran that failed, with the first line of why. Shipyard retries a failed action by itself, so there is nothing you must do; the card is there because a failure used to be one red line scrolling out of the log. It leaves when an engine takes the work up again, or when you dismiss it.
-<<<<<<<< HEAD:design/ENGINE.md
 
 A PR labelled `manual` has no card: Shipyard cannot move it along, so there is nothing to tap. It shows on the field in its project's group, blocked (orange) on you, with its GitHub link reachable through the inspector when you select its line.
-========
-- **Manual — yours** — a PR labelled `manual`, which Shipyard leaves to you, with a button that opens it on GitHub.
->>>>>>>> 2ba45e0 (Rename every remaining yoke reference to shipyard (#27)):design/SHIPYARD.md
 
 A card about a piece of work is edged in that work's own colour — at whatever level the work is — and joined to it by a line in the same colour across the field, so you can see what a card is about without reading it. The line runs out from the work to a gutter beside the inbox and up or down it to the card — never across the text — and a point travels along it: towards the card while the work waits on you, and back from it, in green, once you have acted.
 
@@ -329,11 +289,7 @@ The Dashboard server still starts; the URL is printed to stdout so you can open 
 
 ## Configuration
 
-<<<<<<<< HEAD:design/ENGINE.md
 All configuration lives in `env.yaml` in the working directory; copy `env.example.yaml` to create it. No configuration is read from environment variables. Shipyard uses the GitHub PAT from `github_tokens` directly for API calls and Git clone/fetch/push operations. Claude Code authentication is still handled by the `claude` CLI: `ANTHROPIC_API_KEY`, `GITHUB_TOKEN`, `GH_TOKEN`, and `SHIPYARD_GITHUB_TOKEN` (plus the legacy `VIBRATOR_GITHUB_TOKEN`) are removed from the environment of every Claude subprocess, so the agent authenticates only through your Claude Code login and the configured PAT.
-========
-All configuration lives in `env.yaml` in the working directory; copy `env.example.yaml` to create it. No configuration is read from environment variables. Shipyard uses the GitHub PAT from `github_tokens` directly for API calls and Git clone/fetch/push operations. Claude Code authentication is still handled by the `claude` CLI: `ANTHROPIC_API_KEY`, `GITHUB_TOKEN`, `GH_TOKEN`, and `SHIPYARD_GITHUB_TOKEN` are removed from the environment of every Claude subprocess, so the agent authenticates only through your Claude Code login and the configured PAT.
->>>>>>>> 2ba45e0 (Rename every remaining yoke reference to shipyard (#27)):design/SHIPYARD.md
 
 **GitHub token permissions**
 
@@ -359,13 +315,8 @@ Classic PATs may need `repo`, `project` when using project mode, and `workflow` 
 | `projects` | — | **Required.** List of repositories to run; see the per-project keys below. |
 | `max_concurrency` | `3` | Total size of the shared engine-cylinder pool across all projects. |
 | `cycle_minimum_seconds` | `60` | Minimum seconds between engine cycle starts. |
-<<<<<<<< HEAD:design/ENGINE.md
 | `checkout_retention_hours` | `24` | How long a checkout under `~/.shipyard/checkouts` for an issue or PR that is still open may sit unclaimed and untouched before Shipyard removes it. A checkout whose issue or PR is closed or merged is removed on the next maintenance pass whatever its age. A removed checkout is recreated the next time it is needed; its branch and commits stay in the project's canonical clone. |
 | `min_free_disk_gb` | `10` | Free space, in GB, to keep on the filesystem that holds `~/.shipyard/checkouts`. Below it, Shipyard removes idle checkouts least recently used first; if that is still not enough, it starts no new work, and lists a **Disk almost full** card in the inbox, until there is room. Work already under way carries on. Global only. `0` turns it off. |
-========
-| `checkout_retention_hours` | `24` | How long a checkout under `~/.Shipyard/checkouts` for an issue or PR that is still open may sit unclaimed and untouched before Shipyard removes it. A checkout whose issue or PR is closed or merged is removed on the next maintenance pass whatever its age. A removed checkout is recreated the next time it is needed; its branch and commits stay in the project's canonical clone. |
-| `min_free_disk_gb` | `10` | Free space, in GB, to keep on the filesystem that holds `~/.Shipyard/checkouts`. Below it, Shipyard removes idle checkouts least recently used first; if that is still not enough, it starts no new work, and lists a **Disk almost full** card in the inbox, until there is room. Work already under way carries on. Global only. `0` turns it off. |
->>>>>>>> 2ba45e0 (Rename every remaining yoke reference to shipyard (#27)):design/SHIPYARD.md
 | `claude_code_initial_model` | `claude-sonnet-4-6` | Claude model used during initial implementation. |
 | `claude_code_review_model` | `claude-opus-4-8` | Claude model used during self-review. |
 | `claude_code_initial_effort` | `high` | Reasoning effort for initial implementation. |
@@ -396,11 +347,7 @@ Per-project values override the global ones for that project.
 | `claude_timeout_seconds` | global value | Per-project override of the per-run timeout. |
 | `cycle_minimum_seconds` | global value | Per-project override of the cycle minimum. |
 | `checkout_retention_hours` | global value | Per-project override of how long an idle checkout is kept. |
-<<<<<<<< HEAD:design/ENGINE.md
 | `session_store_path` | `<cwd>/.shipyard/<owner>-<repo>-sessions.json` | Path for persisted local agent-session state. |
-========
-| `session_store_path` | `<cwd>/.Shipyard/<owner>-<repo>-sessions.json` | Path for persisted local agent-session state. |
->>>>>>>> 2ba45e0 (Rename every remaining yoke reference to shipyard (#27)):design/SHIPYARD.md
 
 **CLI flags**
 
@@ -424,11 +371,7 @@ depends on #12
 blocks #34
 ```
 
-<<<<<<<< HEAD:design/ENGINE.md
 Shipyard will not start an issue while any referenced blocker remains open. Older eligible issues start first (bugs first, then milestone order, then creation time), up to `max_concurrency`.
-========
-`shipyard` will not start an issue while any referenced blocker remains open. Older eligible issues start first (bugs first, then milestone order, then creation time), up to `max_concurrency`.
->>>>>>>> 2ba45e0 (Rename every remaining yoke reference to shipyard (#27)):design/SHIPYARD.md
 
 - Relationship phrases are read only from the issue author's own text. Anything inside a `>` blockquote, a `<details>` section, fenced or inline code, or an HTML comment is ignored, so a pasted email or quoted issue that says "blocked by #N" about some *other* issue never blocks this one.
 - An issue can't block itself. A self-reference (in the body, a native dependency, or a sub-issue link) is dropped.

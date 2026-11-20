@@ -380,6 +380,20 @@ function isPinnedCard(card: InboxCard): boolean {
   return card.action?.type === 'approve' && card.action.step === 'queued';
 }
 
+/** The ids of every "Approval queued" card in `cards`. */
+export function queuedApprovalIds(cards: InboxCard[]): string[] {
+  return cards.filter(isPinnedCard).map((c) => c.id);
+}
+
+/**
+ * Whether any card in `cards` is newly queued — i.e. it is an "Approval
+ * queued" card whose id was not already in `prevQueuedIds`. Used by the inbox
+ * component to decide whether to scroll to the top (#18).
+ */
+export function hasNewQueuedApproval(prevQueuedIds: Set<string>, cards: InboxCard[]): boolean {
+  return cards.some((card) => isPinnedCard(card) && !prevQueuedIds.has(card.id));
+}
+
 /**
  * The inbox's cards, top to bottom.
  *

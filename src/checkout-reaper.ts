@@ -8,9 +8,9 @@ import type { RepositorySnapshot } from "./types.js";
 
 /**
  * Rolling cleanup of the per-issue and per-PR checkouts under
- * `~/.yoke/checkouts` (#288).
+ * `~/.shipyard/checkouts` (#288).
  *
- * Yoke used to delete nothing it put on disk. Every `issue-N` and `pr-N`
+ * Shipyard used to delete nothing it put on disk. Every `issue-N` and `pr-N`
  * checkout it ever prepared stayed — 898 of them, 139 GB, on the day they
  * filled the disk — though a checkout is disposable by design:
  *
@@ -254,7 +254,7 @@ async function mtimeMs(path: string): Promise<number> {
 }
 
 /**
- * When a checkout was last used: the latest of its directory's mtime (yoke
+ * When a checkout was last used: the latest of its directory's mtime (Shipyard
  * stamps it each time it prepares the checkout for a run) and of the files git
  * rewrites whenever the worktree is checked out, reset or committed to.
  */
@@ -315,7 +315,7 @@ async function worktreeHeadReachable(dir: string, gitDir: string): Promise<boole
 
 export interface ProjectCheckouts {
   checkouts: CheckoutState[];
-  /** Standalone clones from older versions of yoke, left alone: their refs are their own. */
+  /** Standalone clones from older versions of Shipyard, left alone: their refs are their own. */
   ownClones: string[];
 }
 
@@ -435,7 +435,7 @@ export interface CheckoutReaperReport {
   outcomes: RemovalOutcome[];
   /** Checkouts left because removing them would lose commits. */
   unreachable: CheckoutState[];
-  /** Standalone clones from older versions of yoke, left alone. */
+  /** Standalone clones from older versions of Shipyard, left alone. */
   ownClones: string[];
   /** Bytes freed by the removals. */
   freedBytes: number;

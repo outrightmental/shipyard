@@ -10,8 +10,8 @@ import { workViews } from '../shared/work-view.js';
 import type { KeepAwakeLight } from './keep-awake-light.js';
 import './activity-drawer.js';
 import './keep-awake-light.js';
-import './yoke-field.js';
-import './yoke-inbox.js';
+import './shipyard-field.js';
+import './shipyard-inbox.js';
 
 /**
  * What the dashboard needs of a store: its state, to be told when it changes,
@@ -34,9 +34,9 @@ const NO_ANCHORS: ReadonlyMap<string, Point> = new Map();
  * Everything the run is doing is drawn on the field, one canvas the size of
  * the window. Everything a person can do about it is a card in the inbox. This
  * element is the little that joins them: it reads the store, works out what
- * both should show, and carries a press in the inbox back to yoke.
+ * both should show, and carries a press in the inbox back to Shipyard.
  */
-export class YokeApp extends LitElement {
+export class ShipyardDashboard extends LitElement {
   static override properties = {
     store: { attribute: false },
     _state: { attribute: false, state: true },
@@ -206,14 +206,14 @@ export class YokeApp extends LitElement {
 
     return html`
       <div class="shell" style="--rail-w:${rail.reserved}px;--panel-w:${rail.panel}px">
-        <yoke-field
+        <shipyard-field
           .model=${model}
           .railWidth=${rail.reserved}
           .lampWidth=${s.fleet === null ? lampReserve(this._viewportWidth) : 0}
           .anchors=${rail.open ? this._anchors : NO_ANCHORS}
           @field-select=${this._onSelect}
           @field-log=${() => { this._logOpen = !this._logOpen; }}
-        ></yoke-field>
+        ></shipyard-field>
         ${s.fleet === null ? html`<keep-awake-light
           @keep-awake-status=${(event: CustomEvent<KeepAwakeStatus>) => { this._keepAwake = event.detail; }}
         ></keep-awake-light>` : ''}
@@ -227,7 +227,7 @@ export class YokeApp extends LitElement {
           .sessionCount=${s.sessionCount}
           @drawer-close=${() => { this._logOpen = false; }}
         ></activity-drawer>
-        <yoke-inbox
+        <shipyard-inbox
           .cards=${cards}
           .inspection=${inspection}
           .selectedCardId=${selectedCard?.id ?? null}
@@ -245,10 +245,10 @@ export class YokeApp extends LitElement {
           @inbox-toggle=${() => { this._pinnedOpen = !this._pinnedOpen; }}
           @inbox-log=${() => { this._logOpen = !this._logOpen; }}
           @inbox-anchors=${this._onAnchors}
-        ></yoke-inbox>
+        ></shipyard-inbox>
       </div>
     `;
   }
 }
 
-customElements.define('yoke-app', YokeApp);
+customElements.define('shipyard-dashboard', ShipyardDashboard);

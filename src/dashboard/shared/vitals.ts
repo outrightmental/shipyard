@@ -14,7 +14,7 @@ export interface HoldView {
   untilMs: number;
 }
 
-/** Whether yoke is running, draining after a stop order, or has stopped. */
+/** Whether Shipyard is running, draining after a stop order, or has stopped. */
 export type RunPhase = 'running' | 'shutting-down' | 'shut-down';
 
 /**
@@ -22,8 +22,8 @@ export type RunPhase = 'running' | 'shutting-down' | 'shut-down';
  * hold banner and a status bar, as one reading of the run.
  */
 export interface Vitals {
-  /** What this is a dashboard of, said small under the title: "YOKE" for a
-   *  pool run by hand, "SHIPYARD" for the fleet's and for a fleet member's. */
+  /** What this is a dashboard of, said small under the title: "SHIPYARD",
+   *  whether for a pool run by hand, the fleet's or a fleet member's. */
   brand: string;
   /** The dashboard's title, as configured (`dashboard_title`). */
   title: string;
@@ -98,8 +98,8 @@ export function vitals(state: DashboardState, nowMs: number): Vitals {
     : `https://github.com/${state.owner}/${state.repo}`;
 
   return {
-    brand: state.brand || 'Yoke',
-    title: state.title || state.brand || 'Yoke',
+    brand: state.brand || 'Shipyard',
+    title: state.title || state.brand || 'Shipyard',
     subtitle,
     homeUrl,
     cycle,

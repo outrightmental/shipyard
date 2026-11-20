@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { ActivityDrawer } from "../src/dashboard/components/activity-drawer.js";
-import { YokeInbox } from "../src/dashboard/components/yoke-inbox.js";
+import { ShipyardInbox } from "../src/dashboard/components/shipyard-inbox.js";
 import { fieldModel, INSPECTOR_CARD_ID } from "../src/dashboard/field/model.js";
 import {
   buildInbox,
@@ -112,7 +112,7 @@ test("approval: a PR parked by the review label has a card, and so has every app
     step: "idle",
     label: "Approve",
     disabled: false,
-    hint: "Approve PR #10: yoke squash-merges it",
+    hint: "Approve PR #10: Shipyard squash-merges it",
   });
   assert.deepEqual(idleCard?.links, [
     { label: "PR #10", href: "https://github.com/o/a/pull/10" },
@@ -123,7 +123,7 @@ test("approval: a PR parked by the review label has a card, and so has every app
   assert.equal(idleCard?.dismissible, false, "something still waiting on a person cannot be put away");
 });
 
-test("review: a PR yoke has asked a person to review on GitHub has a card that opens it there", () => {
+test("review: a PR Shipyard has asked a person to review on GitHub has a card that opens it there", () => {
   const state = stateWith([
     ready(1, 10, { awaitingReview: true }),
     ready(2, 20),
@@ -156,10 +156,10 @@ test("keep-awake: only a loop the browser refused to start is something to tap",
 test("disk: a card while the disk is too full to start new work, gone once there is room", () => {
   const GB = 1024 ** 3;
   let state = stateWith([]);
-  state = dashboardReducer(state, event("disk-space", { path: "/home/me/.yoke/checkouts", freeBytes: 20 * GB, minFreeBytes: 10 * GB, low: false }));
+  state = dashboardReducer(state, event("disk-space", { path: "/home/me/.shipyard/checkouts", freeBytes: 20 * GB, minFreeBytes: 10 * GB, low: false }));
   assert.deepEqual(buildInbox(inputFor(state, { disk: state.disk })), []);
 
-  state = dashboardReducer(state, event("disk-space", { path: "/home/me/.yoke/checkouts", freeBytes: 2 * GB, minFreeBytes: 10 * GB, low: true }));
+  state = dashboardReducer(state, event("disk-space", { path: "/home/me/.shipyard/checkouts", freeBytes: 2 * GB, minFreeBytes: 10 * GB, low: true }));
   const [card] = buildInbox(inputFor(state, { disk: state.disk }));
   assert.equal(card?.id, "disk");
   assert.equal(card?.accent, "alarm");
@@ -167,7 +167,7 @@ test("disk: a card while the disk is too full to start new work, gone once there
   assert.equal(card?.dismissible, false, "only room on the disk puts it away");
   assert.equal(card?.workKey, null, "it is about no piece of work");
 
-  state = dashboardReducer(state, event("disk-space", { path: "/home/me/.yoke/checkouts", freeBytes: 30 * GB, minFreeBytes: 10 * GB, low: false }));
+  state = dashboardReducer(state, event("disk-space", { path: "/home/me/.shipyard/checkouts", freeBytes: 30 * GB, minFreeBytes: 10 * GB, low: false }));
   assert.deepEqual(buildInbox(inputFor(state, { disk: state.disk })), []);
 });
 
@@ -200,8 +200,8 @@ test("failure: it is listed until an engine takes the work up again", () => {
   assert.equal(card?.eyebrow, "Failed reviewing");
   assert.equal(card?.title, "PR 10");
   assert.deepEqual(card?.facts, ["engine 2", "1m 5s ago"]);
-  assert.deepEqual(card?.line, { text: "Claude exited with status 1 — yoke retries it", tone: "problem" });
-  assert.equal(card?.action, null, "yoke retries it by itself: there is nothing a person must do");
+  assert.deepEqual(card?.line, { text: "Claude exited with status 1 — Shipyard retries it", tone: "problem" });
+  assert.equal(card?.action, null, "Shipyard retries it by itself: there is nothing a person must do");
   assert.equal(card?.dismissible, true);
   assert.equal(card?.workKey, "o/a#1", "tethered to the work it failed on");
   assert.deepEqual(card?.links.map((link) => link.label), ["PR #10", "Issue #1"]);
@@ -215,7 +215,7 @@ test("failure: it is listed until an engine takes the work up again", () => {
 });
 
 test("failure: a failed implementation is history once an engine is on the PR that came of it", () => {
-  // The implementation failed after it had opened its PR: what yoke does next
+  // The implementation failed after it had opened its PR: what Shipyard does next
   // is an action on that PR, which names the issue it closes.
   const pair: LifecyclePair = { issue: { number: 7, title: "Issue 7", state: "open" }, pr: null, prPhase: "planning" };
   let state = withFailure(stateWith([pair]), { type: "start-implementation", issueNumber: 7 });
@@ -261,7 +261,7 @@ test("failure: it leaves once its work leaves the lifecycle, or it is old, or it
   // Too old to matter: no longer listed, and the store lets go of it the next
   // time an engine starts on anything.
   assert.equal(buildInbox(inputFor(failed, { nowMs: NOW + FAILURE_SHOW_MS })).length, 0);
-  assert.ok(FAILURE_SHOW_MS >= 60 * MINUTE, "listed for at least as long as yoke backs a failing action off");
+  assert.ok(FAILURE_SHOW_MS >= 60 * MINUTE, "listed for at least as long as Shipyard backs a failing action off");
   const failedAt = NOW - 5 * MINUTE;
   const elsewhere = { actionIndex: 1, totalActions: 3, repo: "o/a", type: "self-review", pullRequestNumber: 99, description: "d" };
   assert.equal(dashboardReducer(failed, event("action-start", elsewhere, failedAt + FAILURE_SHOW_MS - 1)).failures.size, 1);
@@ -474,7 +474,7 @@ test("tap shield: a card that has just arrived or moved does not take a press; o
   assert.deepEqual(cardsToShield(before, new Map([["a", 0], ["b", 262], ["c", 502]])), ["b", "c"]);
 });
 
-test("a press on a button that cannot be pressed asks yoke for nothing, whatever delivered the click", () => {
+test("a press on a button that cannot be pressed asks Shipyard for nothing, whatever delivered the click", () => {
   const state = stateWith([parked(1, 10, { checksStatus: "failure" })]);
   const rendered = renderInbox(state);
   const heard: unknown[] = [];
@@ -496,7 +496,7 @@ test("the inbox element: open, it lists its cards under a count of them", () => 
 });
 
 test("the inbox element: with nothing in it, it says what will turn up there", () => {
-  const inbox = new YokeInbox();
+  const inbox = new ShipyardInbox();
   Object.assign(inbox, { cards: [], open: false });
   const html = flatten(inbox.render());
 
@@ -542,7 +542,7 @@ test("the inbox element: tapping a card picks its work out on the field, and the
 test("the inbox element: the card about the work picked out on the field is marked, and the inspector says the rest", () => {
   const state = stateWith([parked(1, 10), { issue: { number: 4, title: "Issue 4", state: "open" }, pr: null, prPhase: "absent", blockedByIssueNumbers: [1] }]);
   const works = workViews(state, NOW);
-  const inbox = new YokeInbox();
+  const inbox = new ShipyardInbox();
   Object.assign(inbox, {
     cards: buildInbox(inputFor(state)),
     open: true,

@@ -1,16 +1,16 @@
 # Agent loop and PR lifecycle
 
-This document describes the end-to-end loop that `yoke` runs against a GitHub repository, with Claude (the `claude` CLI / Claude Code) as the worker for every coding-agent step.
+This document describes the end-to-end loop that Shipyard runs against a GitHub repository, with Claude (the `claude` CLI / Claude Code) as the worker for every coding-agent step.
 
 ## Mental model
 
-Think of `yoke` as a scheduler plus shepherd:
+Think of Shipyard as a scheduler plus shepherd:
 
 ```text
 schedule issue work → run Claude locally → open PR → self-review → fix → re-review → squash merge
 ```
 
-Every pass through the loop is allowed to make progress. Every step is synchronous — Yoke waits for Claude to finish before moving on. That means sessions only ever sit in `in_progress` state inside a single iteration; on the next iteration they will be either completed (the agent finished and the session was recorded) or failed (the previous process crashed mid-action).
+Every pass through the loop is allowed to make progress. Every step is synchronous — Shipyard waits for Claude to finish before moving on. That means sessions only ever sit in `in_progress` state inside a single iteration; on the next iteration they will be either completed (the agent finished and the session was recorded) or failed (the previous process crashed mid-action).
 
 Multiple independent engine loops run concurrently (up to `max_concurrency`). A planning mutex prevents two engines from double-booking the same issue or PR. A shared claim set prevents two engines from executing different actions against the same PR at the same time.
 
@@ -32,7 +32,7 @@ The snapshot includes:
 
 ### 3. Reconcile sessions
 
-Every Claude action runs synchronously, so any `in_progress` session observed at the start of an iteration is a leftover from a previous Yoke process that crashed mid-action. The reconciler marks each such session as `failed` so the planner can re-plan its work cleanly. Only engine 0 runs reconciliation.
+Every Claude action runs synchronously, so any `in_progress` session observed at the start of an iteration is a leftover from a previous Shipyard process that crashed mid-action. The reconciler marks each such session as `failed` so the planner can re-plan its work cleanly. Only engine 0 runs reconciliation.
 
 ### 4. Build a plan
 
@@ -59,7 +59,7 @@ In dry-run mode, execution is skipped after printing the plan. In normal mode, a
 flowchart TD
     START(["start-implementation"])
     IMPL["Claude implements issue in local checkout\nCommit + push branch"]
-    OPEN_PR["Yoke opens draft Pull Request"]
+    OPEN_PR["Shipyard opens draft Pull Request"]
 
     CONFLICTS{"Merge\nconflicts?"}
     RESOLVE["resolve-conflicts\nClaude rebases + pushes"]
@@ -75,10 +75,10 @@ flowchart TD
     REVIEW2["self-review (pass 2)\nClaude reviews diff + comments"]
     RESULT2{"Changes\npushed?"}
 
-    SQUASH["squash-merge\nYoke generates final PR body\nand squash-merges"]
+    SQUASH["squash-merge\nShipyard generates final PR body\nand squash-merges"]
     DONE(["Issue auto-closed"])
 
-    REQUEST["request-review\nYoke marks PR ready-for-review\nrequests human review\nmoves issue → In Review"]
+    REQUEST["request-review\nShipyard marks PR ready-for-review\nrequests human review\nmoves issue → In Review"]
     HUMAN{"Human\naction"}
 
     START --> IMPL --> OPEN_PR
@@ -99,7 +99,7 @@ flowchart TD
 
 ## Dependency syntax
 
-`yoke` reads dependency hints directly from issue bodies:
+Shipyard reads dependency hints directly from issue bodies:
 
 - `blocked by #123`
 - `depends on #123`
@@ -130,7 +130,7 @@ Issues and PRs labeled `manual` are opted out of automated work:
 - **Issues** labeled `manual` are never picked up by the planner.
 - **PRs** labeled `manual` receive no automated actions and do not count against `max_concurrency`.
 
-Yoke creates the `manual` label in the repository on startup if it does not already exist.
+Shipyard creates the `manual` label in the repository on startup if it does not already exist.
 
 ## Closing-reference behavior
 
@@ -139,7 +139,7 @@ The loop collects issue references from:
 - GitHub's linked closing issues API,
 - PR titles and bodies with phrases such as `fixes #123`, `closes #123`, `resolves #123`, `implements #123`, and `for #123`.
 
-Every issue reference yoke writes is a closing one: `Closes #123`. GitHub has no `refs` keyword, so a `Refs #123` line links nothing and closes nothing — if a body yoke is about to publish carries `Refs #123` for an issue that PR closes, the reference is rewritten to `Closes #123`.
+Every issue reference Shipyard writes is a closing one: `Closes #123`. GitHub has no `refs` keyword, so a `Refs #123` line links nothing and closes nothing — if a body Shipyard is about to publish carries `Refs #123` for an issue that PR closes, the reference is rewritten to `Closes #123`.
 
 This holds for an incomplete implementation too: a run that is cut short still opens with `Closes #N`. What holds that PR back is its draft state and the "Incomplete" warning banner at the top of its body, not a reference GitHub would ignore.
 
@@ -151,12 +151,12 @@ The six orchestrator action types each record a session in the local store. The 
 
 | Action | What happens |
 | --- | --- |
-| `start-implementation` (session: `implementation`) | Claude implements the issue in a fresh checkout and pushes a branch. Yoke opens a draft PR. In project mode, the issue moves to "In Progress". |
-| `self-review` | Claude checks out the PR branch, reviews the diff against the base, and either pushes fixes or confirms the code is clean. Human PR comments are included as context. Yoke posts a summary comment on the PR. |
-| `address-failing-checks` | Yoke fetches failing CI log excerpts. Claude reads them, pushes a fix, and Yoke posts a comment. Checks count as stuck once one has run for more than 10 minutes, timed from when the check started rather than from the commit. Before Claude reads the logs, yoke cancels only this PR's own runs that have stalled past those 10 minutes. A suite that runs longer than a poll cycle finishes, and other PRs' CI is never touched. |
-| `resolve-conflicts` | Claude rebases the PR branch on the base branch and resolves conflicts. Yoke posts a comment. |
-| `squash-merge` | Claude generates a final PR body from the branch commits and diff. Yoke updates the PR body, promotes the draft to ready-for-review if needed, and squash-merges. |
-| `request-review` | (Project SDLC, or a PR gated by the `review` label) Yoke marks the PR ready-for-review, requests human review from configured reviewers, and moves the issue to "In Review" in project mode. |
+| `start-implementation` (session: `implementation`) | Claude implements the issue in a fresh checkout and pushes a branch. Shipyard opens a draft PR. In project mode, the issue moves to "In Progress". |
+| `self-review` | Claude checks out the PR branch, reviews the diff against the base, and either pushes fixes or confirms the code is clean. Human PR comments are included as context. Shipyard posts a summary comment on the PR. |
+| `address-failing-checks` | Shipyard fetches failing CI log excerpts. Claude reads them, pushes a fix, and Shipyard posts a comment. Checks count as stuck once one has run for more than 10 minutes, timed from when the check started rather than from the commit. Before Claude reads the logs, Shipyard cancels only this PR's own runs that have stalled past those 10 minutes. A suite that runs longer than a poll cycle finishes, and other PRs' CI is never touched. |
+| `resolve-conflicts` | Claude rebases the PR branch on the base branch and resolves conflicts. Shipyard posts a comment. |
+| `squash-merge` | Claude generates a final PR body from the branch commits and diff. Shipyard updates the PR body, promotes the draft to ready-for-review if needed, and squash-merges. |
+| `request-review` | (Project SDLC, or a PR gated by the `review` label) Shipyard marks the PR ready-for-review, requests human review from configured reviewers, and moves the issue to "In Review" in project mode. |
 
 One more phase is recorded without being an action: `approval`, written when a human presses **Approve** on a review-gated PR's card in the Dashboard's inbox. It tells the planner to carry on with the `squash-merge` the `review` label held back — on an engine cylinder like any other action, behind the same CI and conflict gate. Work done on the PR after the approval (fixing failing checks, resolving conflicts, re-reviewing after new comments or a return to draft) puts it back up for approval.
 
@@ -175,7 +175,7 @@ Each action is idempotent through session state. A later iteration observes what
 
 - **`claude` CLI not found / not authenticated**: install Claude Code and run `claude login` to authenticate with your Claude Code subscription.
 - **Missing GitHub token / repository access**: add a PAT with access to the repository under `github_tokens` in `env.yaml`, and make sure the project's `github_token_name` (if set) names one of those entries.
-- **No PR appears after start-implementation**: check the iteration log — Yoke opens the PR itself via the REST API after Claude pushes, so an error from either step will surface in the action log.
+- **No PR appears after start-implementation**: check the iteration log — Shipyard opens the PR itself via the REST API after Claude pushes, so an error from either step will surface in the action log.
 - **Self-review loop repeats**: the planner only advances once two consecutive clean self-reviews are recorded against the current head SHA. If Claude keeps pushing changes, review the PR diff to understand what it is fixing.
 - **Final description fails**: confirm `git`, `claude`, and the configured GitHub PAT are available locally.
 - **Too much parallel work**: lower `max_concurrency`.

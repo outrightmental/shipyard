@@ -7,16 +7,16 @@ import { join } from "node:path";
 
 import {
   buildDefaultSessionStorePath,
-  buildLegacySessionStorePath,
+  buildLegacySessionStorePaths,
   COMMENT_MARKERS,
   GitHubClient,
   isReviewBot,
-  isYokeComment,
-  isYokeReview,
+  isShipyardComment,
+  isShipyardReview,
   loadSnapshot,
   REVIEW_MARKERS,
-  YOKE_COMMENT_MARKER,
-  YOKE_REVIEW_MARKER,
+  SHIPYARD_COMMENT_MARKER,
+  SHIPYARD_REVIEW_MARKER,
 } from "../src/github.js";
 import { FileSessionStore } from "../src/session-store.js";
 
@@ -38,64 +38,79 @@ function captureStderr(t: test.TestContext): { output: () => string } {
   };
 }
 
-test("isYokeReview returns true when the review body carries the marker", () => {
+test("isShipyardReview returns true when the review body carries the marker", () => {
   assert.equal(
-    isYokeReview(`${YOKE_REVIEW_MARKER}\n\nLooks good.`),
+    isShipyardReview(`${SHIPYARD_REVIEW_MARKER}\n\nLooks good.`),
     true,
   );
 });
 
-test("isYokeReview returns false for reviews from other sources", () => {
-  assert.equal(isYokeReview("LGTM"), false);
-  assert.equal(isYokeReview(null), false);
-  assert.equal(isYokeReview(undefined), false);
+test("isShipyardReview returns false for reviews from other sources", () => {
+  assert.equal(isShipyardReview("LGTM"), false);
+  assert.equal(isShipyardReview(null), false);
+  assert.equal(isShipyardReview(undefined), false);
 });
 
-test("the default session store lives under .yoke/ and the legacy path under .vibrator/, side by side", () => {
+test("the default session store lives under .shipyard/ and the legacy paths under .yoke/ and .vibrator/, side by side", () => {
   assert.equal(
-    buildDefaultSessionStorePath("outrightmental", "yoke"),
-    join(process.cwd(), ".yoke", "outrightmental-yoke-sessions.json"),
+    buildDefaultSessionStorePath("outrightmental", "shipyard"),
+    join(process.cwd(), ".shipyard", "outrightmental-shipyard-sessions.json"),
   );
-  // The pre-rename location (#237), read-only: only ever moved from, never written to.
-  assert.equal(
-    buildLegacySessionStorePath("outrightmental", "yoke"),
-    join(process.cwd(), ".vibrator", "outrightmental-yoke-sessions.json"),
-  );
+  // The pre-rename locations, newest first, read-only: only ever moved from, never written to.
+  assert.deepEqual(buildLegacySessionStorePaths("outrightmental", "shipyard"), [
+    join(process.cwd(), ".yoke", "outrightmental-shipyard-sessions.json"),
+    join(process.cwd(), ".vibrator", "outrightmental-shipyard-sessions.json"),
+  ]);
 });
 
-// ─── Legacy marker dual-read (vibrator → yoke rename, #237) ──────────────────
+// ─── Legacy marker dual-read (the renames, #237 and since) ──────────────────
 //
 // The two hidden markers are a wire format already embedded in every review
 // and automated comment posted before the rename. New code writes only the
-// yoke spelling but must keep recognizing the old one, or every in-flight PR
+// Shipyard spelling but must keep recognizing the old one, or every in-flight PR
 // would collect a duplicate review and have its old comments re-read as human
 // feedback. The old spellings are written out literally on purpose: these
 // tests pin the exact strings that already exist in GitHub comment bodies.
 const LEGACY_REVIEW_MARKER = "<!-- vibrator-review -->";
 const LEGACY_COMMENT_MARKER = "<!-- vibrator:automated-comment -->";
 
-test("the yoke marker spellings are written first and the legacy spellings are read-only fallbacks", () => {
-  assert.equal(REVIEW_MARKERS[0], YOKE_REVIEW_MARKER);
-  assert.equal(COMMENT_MARKERS[0], YOKE_COMMENT_MARKER);
+test("the Shipyard marker spellings are written first and the legacy spellings are read-only fallbacks", () => {
+  assert.equal(REVIEW_MARKERS[0], SHIPYARD_REVIEW_MARKER);
+  assert.equal(COMMENT_MARKERS[0], SHIPYARD_COMMENT_MARKER);
   assert.ok(REVIEW_MARKERS.includes(LEGACY_REVIEW_MARKER), "legacy review marker is still recognized");
   assert.ok(COMMENT_MARKERS.includes(LEGACY_COMMENT_MARKER), "legacy comment marker is still recognized");
-  assert.notEqual(YOKE_REVIEW_MARKER, LEGACY_REVIEW_MARKER);
-  assert.notEqual(YOKE_COMMENT_MARKER, LEGACY_COMMENT_MARKER);
+  assert.notEqual(SHIPYARD_REVIEW_MARKER, LEGACY_REVIEW_MARKER);
+  assert.notEqual(SHIPYARD_COMMENT_MARKER, LEGACY_COMMENT_MARKER);
 });
 
-test("isYokeReview still recognizes a review body carrying the legacy vibrator-review marker", () => {
-  assert.equal(isYokeReview(`${LEGACY_REVIEW_MARKER}\n\nAutomated review from before the rename.`), true);
+// The spellings written while Shipyard was called Yoke, until 2026-11-20.
+const YOKE_REVIEW_MARKER = "<!-- yoke-review -->";
+const YOKE_COMMENT_MARKER = "<!-- yoke:automated-comment -->";
+
+test("the markers written under the Yoke name are still read as Shipyard's own, and never written", async () => {
+  assert.equal(isShipyardReview(`${YOKE_REVIEW_MARKER}
+
+Automated review from before the rename.`), true);
+  assert.equal(isShipyardComment(`Addressed failing CI checks.
+
+${YOKE_COMMENT_MARKER}`), true);
+  assert.notEqual(SHIPYARD_REVIEW_MARKER, YOKE_REVIEW_MARKER);
+  assert.notEqual(SHIPYARD_COMMENT_MARKER, YOKE_COMMENT_MARKER);
 });
 
-test("isYokeComment recognizes both the yoke and the legacy automated-comment markers", () => {
-  assert.equal(isYokeComment(`Addressed failing CI checks.\n\n${YOKE_COMMENT_MARKER}`), true);
-  assert.equal(isYokeComment(`Addressed failing CI checks.\n\n${LEGACY_COMMENT_MARKER}`), true);
-  assert.equal(isYokeComment("Genuine human feedback"), false);
-  assert.equal(isYokeComment(null), false);
-  assert.equal(isYokeComment(undefined), false);
+test("isShipyardReview still recognizes a review body carrying the legacy vibrator-review marker", () => {
+  assert.equal(isShipyardReview(`${LEGACY_REVIEW_MARKER}\n\nAutomated review from before the rename.`), true);
 });
 
-test("createPullRequestReview writes only the yoke review marker", async (t) => {
+test("isShipyardComment recognizes the current and the legacy automated-comment markers", () => {
+  assert.equal(isShipyardComment(`Addressed failing CI checks.\n\n${SHIPYARD_COMMENT_MARKER}`), true);
+  assert.equal(isShipyardComment(`Addressed failing CI checks.\n\n${LEGACY_COMMENT_MARKER}`), true);
+  assert.equal(isShipyardComment("Genuine human feedback"), false);
+  assert.equal(isShipyardComment(null), false);
+  assert.equal(isShipyardComment(undefined), false);
+});
+
+test("createPullRequestReview writes only the Shipyard review marker", async (t) => {
   const bodies: string[] = [];
   const fetchMock = t.mock.method(
     globalThis,
@@ -122,12 +137,12 @@ test("createPullRequestReview writes only the yoke review marker", async (t) => 
   });
 
   assert.equal(bodies.length, 1);
-  assert.ok(bodies[0]!.startsWith(YOKE_REVIEW_MARKER), "review body starts with the yoke marker");
+  assert.ok(bodies[0]!.startsWith(SHIPYARD_REVIEW_MARKER), "review body starts with the Shipyard marker");
   assert.ok(!bodies[0]!.includes(LEGACY_REVIEW_MARKER), "the legacy spelling is never written");
-  assert.equal(isYokeReview(bodies[0]), true);
+  assert.equal(isShipyardReview(bodies[0]), true);
 });
 
-test("postComment appends only the yoke automated-comment marker", async (t) => {
+test("postComment appends only the Shipyard automated-comment marker", async (t) => {
   const bodies: string[] = [];
   const fetchMock = t.mock.method(
     globalThis,
@@ -150,9 +165,9 @@ test("postComment appends only the yoke automated-comment marker", async (t) => 
 
   assert.equal(id, 4242);
   assert.equal(bodies.length, 1);
-  assert.ok(bodies[0]!.endsWith(YOKE_COMMENT_MARKER), "comment body ends with the yoke marker");
+  assert.ok(bodies[0]!.endsWith(SHIPYARD_COMMENT_MARKER), "comment body ends with the Shipyard marker");
   assert.ok(!bodies[0]!.includes(LEGACY_COMMENT_MARKER), "the legacy spelling is never written");
-  assert.equal(isYokeComment(bodies[0]), true);
+  assert.equal(isShipyardComment(bodies[0]), true);
 });
 
 test("listPullRequestComments excludes comments and reviews that carry the legacy vibrator markers", async (t) => {
@@ -195,6 +210,46 @@ test("listPullRequestComments excludes comments and reviews that carry the legac
   assert.equal(comments[0]?.body, "Please add more tests");
 });
 
+test("listPullRequestComments excludes comments and reviews that carry the markers written under the Yoke name", async (t) => {
+  // A PR that was in flight across the rename: its earlier automated comment
+  // and self-review carry the old spelling and must still be told apart from
+  // the human's comment on the same shared account.
+  mockPrCommentEndpoints(t, 44, {
+    issueComments: [
+      {
+        id: 1,
+        user: { login: "charneykaye", type: "User" },
+        body: `Reviewed code, no issues found.\n\n${YOKE_COMMENT_MARKER}`,
+        created_at: "2024-03-01T10:00:00Z",
+        html_url: "https://github.com/o/r/pull/44#issuecomment-1",
+      },
+      {
+        id: 2,
+        user: { login: "charneykaye", type: "User" },
+        body: "Please add more tests",
+        created_at: "2024-03-02T09:00:00Z",
+        html_url: "https://github.com/o/r/pull/44#issuecomment-2",
+      },
+    ],
+    reviews: [
+      {
+        id: 3,
+        user: { login: "charneykaye", type: "User" },
+        body: `${YOKE_REVIEW_MARKER}\n\nAutomated review from before the rename.`,
+        submitted_at: "2024-03-01T11:00:00Z",
+        html_url: "https://github.com/o/r/pull/44#pullrequestreview-3",
+      },
+    ],
+  });
+
+  const client = new GitHubClient({ owner: "outrightmental", repo: "testrepo", token: "token" });
+  const comments = await client.listPullRequestComments(44);
+
+  assert.equal(comments.length, 1);
+  assert.equal(comments[0]?.id, 2);
+  assert.equal(comments[0]?.body, "Please add more tests");
+});
+
 test("listOpenPullRequests counts a legacy-marked review on the head sha as a clean review", async (t) => {
   // The dual-read decision working end to end: an in-flight PR whose last
   // self-review was posted under the old marker must NOT collect a duplicate
@@ -209,7 +264,7 @@ test("listOpenPullRequests counts a legacy-marked review on the head sha as a cl
     number,
     title: `PR ${number}`,
     body: "",
-    head: { sha: `head-${number}`, ref: `yoke/issue-${number}-thing` },
+    head: { sha: `head-${number}`, ref: `shipyard/issue-${number}-thing` },
     base: { ref: "main" },
     state: "open",
     draft: true,
@@ -820,15 +875,15 @@ function mockPrCommentEndpoints(
   });
 }
 
-test("listPullRequestComments excludes Yoke's own marked comments but keeps human comments on a shared account", async (t) => {
-  // Yoke runs under the same account ("charneykaye") as the human
+test("listPullRequestComments excludes Shipyard's own marked comments but keeps human comments on a shared account", async (t) => {
+  // Shipyard runs under the same account ("charneykaye") as the human
   // reviewer, so its own comments must be told apart by the hidden marker —
   // not by author login.
   mockPrCommentEndpoints(t, 42, {
     issueComments: [
       {
         user: { login: "charneykaye", type: "User" },
-        body: `Reviewed code, no issues found.\n\n${YOKE_COMMENT_MARKER}`,
+        body: `Reviewed code, no issues found.\n\n${SHIPYARD_COMMENT_MARKER}`,
         created_at: "2024-03-01T10:00:00Z",
         html_url: "https://github.com/o/r/pull/42#issuecomment-1",
       },
@@ -850,7 +905,7 @@ test("listPullRequestComments excludes Yoke's own marked comments but keeps huma
   const client = new GitHubClient({ owner: "outrightmental", repo: "testrepo", token: "token" });
   const comments = await client.listPullRequestComments(42);
 
-  // Yoke's own marked comment and the github-actions bot comment are
+  // Shipyard's own marked comment and the github-actions bot comment are
   // dropped; the human's comment survives despite sharing the login.
   assert.equal(comments.length, 1);
   assert.equal(comments[0]?.author, "charneykaye");
@@ -883,10 +938,10 @@ test("listPullRequestComments includes PR reviews and inline review-thread comme
         submitted_at: "2024-03-02T08:05:00Z",
         html_url: "https://github.com/o/r/pull/7#pullrequestreview-2",
       },
-      // Yoke's own posted review — excluded via the review marker.
+      // Shipyard's own posted review — excluded via the review marker.
       {
         user: { login: "alice", type: "User" },
-        body: `${YOKE_REVIEW_MARKER}\n\nAutomated review.`,
+        body: `${SHIPYARD_REVIEW_MARKER}\n\nAutomated review.`,
         submitted_at: "2024-03-02T08:10:00Z",
         html_url: "https://github.com/o/r/pull/7#pullrequestreview-3",
       },
@@ -905,7 +960,7 @@ test("listPullRequestComments includes PR reviews and inline review-thread comme
   const comments = await client.listPullRequestComments(7);
 
   // Conversation comment, review summary, and review-thread comment — sorted
-  // by creation time. The empty review and Yoke's own review are excluded.
+  // by creation time. The empty review and Shipyard's own review are excluded.
   assert.equal(comments.length, 3);
   assert.deepEqual(
     comments.map((c) => c.kind),
@@ -929,7 +984,7 @@ test("isReviewBot recognizes Copilot and CodeRabbit logins but not noise bots", 
 test("listPullRequestComments keeps Copilot review-bot feedback but drops noise bots", async (t) => {
   // GitHub Copilot posts its review summary under `copilot-pull-request-reviewer[bot]`
   // and its inline comments under `Copilot` — both `Bot`-type accounts. That
-  // feedback must reach Yoke, while CI noise bots stay excluded.
+  // feedback must reach Shipyard, while CI noise bots stay excluded.
   mockPrCommentEndpoints(t, 74, {
     issueComments: [
       {
@@ -975,7 +1030,7 @@ test("listPullRequestComments returns empty array when there is no human feedbac
     issueComments: [
       {
         user: { login: "charneykaye", type: "User" },
-        body: `Addressed failing CI checks.\n\n${YOKE_COMMENT_MARKER}`,
+        body: `Addressed failing CI checks.\n\n${SHIPYARD_COMMENT_MARKER}`,
         created_at: "2024-03-01T10:00:00Z",
         html_url: "https://github.com/o/r/pull/10#issuecomment-1",
       },
@@ -993,7 +1048,7 @@ test("listPullRequestComments excludes comment ids passed in excludeCommentIds",
       {
         id: 7001,
         user: { login: "charneykaye", type: "User" },
-        body: "Yoke's own comment (marker stripped by a quote)",
+        body: "Shipyard's own comment (marker stripped by a quote)",
         created_at: "2024-03-01T10:00:00Z",
         html_url: "https://github.com/o/r/pull/50#issuecomment-1",
       },
@@ -1018,7 +1073,7 @@ test("listPullRequestComments excludes comment ids passed in excludeCommentIds",
 });
 
 test("listPullRequestComments excludes comments that already carry a 👀 reaction", async (t) => {
-  // Yoke reacts 👀 to every comment it reads; on the next cycle that
+  // Shipyard reacts 👀 to every comment it reads; on the next cycle that
   // comment must not be fed back into the review again.
   mockPrCommentEndpoints(t, 60, {
     issueComments: [
@@ -1119,7 +1174,7 @@ function makePr(overrides: Partial<{ updatedAt: string; draft: boolean }> = {}) 
 }
 
 test("loadSnapshot (project mode) sets hasNewCommentsSinceLastRead when a human comment is newer than lastReadAt", async (t) => {
-  const dir = await mkdtemp(join(tmpdir(), "yoke-snapshot-test-"));
+  const dir = await mkdtemp(join(tmpdir(), "shipyard-snapshot-test-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
 
   const store = new FileSessionStore(join(dir, "sessions.json"));
@@ -1143,7 +1198,7 @@ test("loadSnapshot (project mode) sets hasNewCommentsSinceLastRead when a human 
 });
 
 test("loadSnapshot sets hasNewCommentsSinceLastRead on a PR approved on the dashboard but not yet merged (#274)", async (t) => {
-  const dir = await mkdtemp(join(tmpdir(), "yoke-snapshot-test-"));
+  const dir = await mkdtemp(join(tmpdir(), "shipyard-snapshot-test-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
 
   const store = new FileSessionStore(join(dir, "sessions.json"));
@@ -1163,7 +1218,7 @@ test("loadSnapshot sets hasNewCommentsSinceLastRead on a PR approved on the dash
 });
 
 test("loadSnapshot (project mode) does not set hasNewCommentsSinceLastRead when all comments predate lastReadAt", async (t) => {
-  const dir = await mkdtemp(join(tmpdir(), "yoke-snapshot-test-"));
+  const dir = await mkdtemp(join(tmpdir(), "shipyard-snapshot-test-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
 
   const store = new FileSessionStore(join(dir, "sessions.json"));
@@ -1187,7 +1242,7 @@ test("loadSnapshot (project mode) does not set hasNewCommentsSinceLastRead when 
 });
 
 test("loadSnapshot (project mode) skips comment fetch when pr.updatedAt is not newer than lastReadAt", async (t) => {
-  const dir = await mkdtemp(join(tmpdir(), "yoke-snapshot-test-"));
+  const dir = await mkdtemp(join(tmpdir(), "shipyard-snapshot-test-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
 
   const store = new FileSessionStore(join(dir, "sessions.json"));
@@ -1214,7 +1269,7 @@ test("loadSnapshot (project mode) skips comment fetch when pr.updatedAt is not n
 });
 
 test("loadSnapshot does not throw when listing open issues fails", async (t) => {
-  const dir = await mkdtemp(join(tmpdir(), "yoke-snapshot-test-"));
+  const dir = await mkdtemp(join(tmpdir(), "shipyard-snapshot-test-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
 
   const store = new FileSessionStore(join(dir, "sessions.json"));
@@ -1231,7 +1286,7 @@ test("loadSnapshot does not throw when listing open issues fails", async (t) => 
 });
 
 test("loadSnapshot does not throw when listing open pull requests fails", async (t) => {
-  const dir = await mkdtemp(join(tmpdir(), "yoke-snapshot-test-"));
+  const dir = await mkdtemp(join(tmpdir(), "shipyard-snapshot-test-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
 
   const store = new FileSessionStore(join(dir, "sessions.json"));
@@ -1260,7 +1315,7 @@ test("listOpenPullRequests times pending checks from the oldest incomplete check
     number,
     title: `PR ${number}`,
     body: "",
-    head: { sha: `head-${number}`, ref: `yoke/issue-${number}` },
+    head: { sha: `head-${number}`, ref: `shipyard/issue-${number}` },
     base: { ref: "main" },
     state: "open",
     draft: false,
@@ -1352,7 +1407,7 @@ test("cancelStalledWorkflowRunsForPullRequest cancels only this PR's runs that r
   const run = (overrides: Record<string, unknown>) => ({
     status: "in_progress",
     head_sha: "sha-400",
-    head_branch: "yoke/issue-400",
+    head_branch: "shipyard/issue-400",
     run_started_at: minutesAgo(20),
     created_at: minutesAgo(20),
     pull_requests: [{ number: 400 }],
@@ -1381,9 +1436,9 @@ test("cancelStalledWorkflowRunsForPullRequest cancels only this PR's runs that r
             run({ id: 4, created_at: minutesAgo(40), run_started_at: minutesAgo(2) }), // fresh re-run of an old run → left alone
             run({ id: 5, status: "completed" }), // already finished
             // The sibling PR's suite, even if the API ignored the head_sha filter.
-            run({ id: 6, head_sha: "sha-401", head_branch: "yoke/issue-401", pull_requests: [{ number: 401 }] }),
+            run({ id: 6, head_sha: "sha-401", head_branch: "shipyard/issue-401", pull_requests: [{ number: 401 }] }),
             // Another PR whose branch happens to sit on the same commit.
-            run({ id: 7, head_branch: "yoke/issue-401", pull_requests: [{ number: 401 }] }),
+            run({ id: 7, head_branch: "shipyard/issue-401", pull_requests: [{ number: 401 }] }),
             // Same commit and branch, but GitHub attributes the run to another PR.
             run({ id: 8, pull_requests: [{ number: 402 }] }),
             // A fork PR's run: GitHub leaves pull_requests empty.
@@ -1400,7 +1455,7 @@ test("cancelStalledWorkflowRunsForPullRequest cancels only this PR's runs that r
   const count = await client.cancelStalledWorkflowRunsForPullRequest({
     pullRequestNumber: 400,
     headSha: "sha-400",
-    headRefName: "yoke/issue-400",
+    headRefName: "shipyard/issue-400",
     runningLongerThanMs: 10 * 60_000,
   });
 

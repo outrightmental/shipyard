@@ -94,7 +94,7 @@ async function message(p: Platform, event: SocketEvent): Promise<{ statusCode: n
 
 /**
  * An Approve press. It goes to the member the repository is assigned to,
- * which answers it through its own events, as Yoke answers a press on its own
+ * which answers it through its own events, as Shipyard answers a press on its own
  * dashboard. A press no member can be handed — the repository is no one's, or
  * its member has no socket open — is answered here instead, as refused, to
  * the console that sent it: its card says why rather than wait on an answer

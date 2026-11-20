@@ -318,7 +318,7 @@ test("an approval that fails under the lock says how long it waited", async () =
   assert.match(s.lines[1] ?? "", /failed after 0s \(waited 0s for the planner\): Error: session store is unreadable/);
 });
 
-test("an approval requested while yoke shuts down is refused at once", async () => {
+test("an approval requested while Shipyard shuts down is refused at once", async () => {
   const { approvals, events } = harness();
   const s = steps();
   s.shutdownSignal.requested = true;

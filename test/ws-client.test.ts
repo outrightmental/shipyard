@@ -207,7 +207,7 @@ test("one Approve press travels over a real socket: Queued at once, then loading
   const { DashboardServer } = await import("../src/dashboard-server.js");
   const { EventEmitter } = await import("../src/event-emitter.js");
   const { DashboardApprovals } = await import("../src/dashboard-approval.js");
-  const { YokeInbox } = await import("../src/dashboard/components/yoke-inbox.js");
+  const { ShipyardInbox } = await import("../src/dashboard/components/shipyard-inbox.js");
   const { DashboardStore } = await import("../src/dashboard/store/dashboard-store.js");
   const { click, renderInbox } = await import("./dashboard-helpers.js");
 
@@ -243,7 +243,7 @@ test("one Approve press travels over a real socket: Queued at once, then loading
   store.connectLive(`ws://127.0.0.1:${port}/api/ws`);
   await waitMs(300);
 
-  // The inbox, wired to the store the way yoke-app wires it.
+  // The inbox, wired to the store the way shipyard-dashboard wires it.
   const pair = {
     issue: { number: 1, title: "Add the thing", state: "open" },
     pr: { number: 10, title: "Add the thing", state: "open", draft: false, checksStatus: "success" },
@@ -251,7 +251,7 @@ test("one Approve press travels over a real socket: Queued at once, then loading
   };
   emitter.emit("lifecycle-update", { repo: "o/a", pairs: [pair] });
   await waitMs(100);
-  const inbox = new YokeInbox();
+  const inbox = new ShipyardInbox();
   inbox.addEventListener("inbox-approve", (event) => {
     store.approvePullRequest((event as CustomEvent).detail);
   });
@@ -262,10 +262,10 @@ test("one Approve press travels over a real socket: Queued at once, then loading
 
   render();
   clickButton(); // one press sends it
-  assert.match(render(), /Queued/, "Queued the instant it is pressed, before yoke has answered");
-  assert.match(render(), /queued — sent to yoke/);
+  assert.match(render(), /Queued/, "Queued the instant it is pressed, before Shipyard has answered");
+  assert.match(render(), /queued — sent to Shipyard/);
   await waitMs(150);
-  assert.equal(store.getState().approvals.get("o/a#10")?.state, "loading", "yoke answered at once");
+  assert.equal(store.getState().approvals.get("o/a#10")?.state, "loading", "Shipyard answered at once");
   assert.match(render(), /Queued/);
   assert.match(render(), /reading PR #10 from GitHub/);
 

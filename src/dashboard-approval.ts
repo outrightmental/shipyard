@@ -7,7 +7,7 @@ import type { AgentSession, RepositorySnapshot } from "./types.js";
 /**
  * Dashboard approvals (#274) as the dashboard sees them (#276).
  *
- * Pressing Approve used to leave the pill guessing: yoke wrote what became of
+ * Pressing Approve used to leave the pill guessing: Shipyard wrote what became of
  * the request only to the log, so after a fixed 20 s the button went back to
  * Approve whether the approval was still queued, refused or failed — and a
  * second press, made because the first looked lost, was refused because of the
@@ -58,7 +58,7 @@ export type ApprovalDecision =
     }
   | { state: "refused"; reason: string };
 
-export const SHUTTING_DOWN_REASON = "yoke is shutting down and will start no new work";
+export const SHUTTING_DOWN_REASON = "Shipyard is shutting down and will start no new work";
 export const ENGINE_WORKING_REASON = "an engine is working on it";
 
 /** The key one PR's approval is known by, here and on the dashboard. */

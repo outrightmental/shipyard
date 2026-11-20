@@ -57,7 +57,7 @@ const GITHUB_API = "https://api.github.com";
 const PENDING_MS = 60 * 60_000;
 
 /**
- * What the app may do, which is what Yoke does with a token today:
+ * What the app may do, which is what Shipyard does with a token today:
  * read and write code, issues and pull requests; read checks and statuses;
  * approve and cancel workflow runs, and push a branch that changes a workflow;
  * and, for Project SDLC, move items on the organization's project boards and

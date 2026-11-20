@@ -177,7 +177,7 @@ test("the hotter a piece of work, the higher it is set within its project, and a
   assert.ok(reactor.rect.y < queued!.rect.y && queued!.rect.y < waiting!.rect.y && waiting!.rect.y < cold!.rect.y, "heat rises");
   assert.ok(reactor.rect.h > queued!.rect.h, "a reactor has the most room");
   assert.equal(layout.density, 0, "with room to spare, the roomiest sizes");
-  assert.equal(queued!.lines, 2, "where work yoke does next has a second line of detail");
+  assert.equal(queued!.lines, 2, "where work Shipyard does next has a second line of detail");
   assert.deepEqual([queued!.level, waiting!.level, cold!.level], ["queued", "waiting", "cold"], "each line keeps its own level, to be drawn at its weight");
 });
 
@@ -400,7 +400,7 @@ test("a hold is set above everything, the full width of the field", () => {
 
 test("with no work to draw, the field says so in words where the work would be", () => {
   const connecting = lay({ ...initialState(), cylinders: [] });
-  assert.deepEqual(connecting.nodes.map((node) => node.kind === "note" && node.text), ["Connecting to yoke…"]);
+  assert.deepEqual(connecting.nodes.map((node) => node.kind === "note" && node.text), ["Connecting to Shipyard…"]);
 
   const empty = lay(stateWith([], "o/a", { cylinders: [idle(1)] }));
   assert.equal(empty.nodes.find((node) => node.kind === "note")?.kind === "note" && (empty.nodes.find((node) => node.kind === "note") as { text: string }).text, "No open issues or pull requests.");

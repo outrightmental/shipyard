@@ -12,7 +12,7 @@ export const CHECKS_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 
 /**
  * Configuration for Human-in-the-Loop project mode.
- * When provided to `buildPlan`, yoke filters issues by project status,
+ * When provided to `buildPlan`, Shipyard filters issues by project status,
  * skips issues labelled "manual", never auto-merges, and instead requests
  * human review after self-review passes.
  */
@@ -48,7 +48,7 @@ export const FOCUS_LABEL = "focus";
 
 /**
  * The label that opts an issue into the implement-then-wait-for-review
- * workflow: yoke implements it, self-reviews, and fixes CI exactly as
+ * workflow: Shipyard implements it, self-reviews, and fixes CI exactly as
  * usual, but after the clean self-review it requests human review instead
  * of squash-merging — the final PR is always left for a human
  * (outrightmental.com#409). Works in every mode; in project mode it is
@@ -328,11 +328,11 @@ export type ReviewApproval = "awaiting-approval" | "approved";
  * Where a PR stands with the human approval the `review` label holds it for
  * (#274), or undefined when it is not waiting on one:
  *
- * - `awaiting-approval`: parked. Yoke requested review after a clean
+ * - `awaiting-approval`: parked. Shipyard requested review after a clean
  *   self-review and has nothing more to do on it until a human acts; the
  *   dashboard offers an Approve button.
  * - `approved`: a human approved it on the dashboard. The approval stands
- *   until the PR merges (#278): yoke carries it through whatever fixing,
+ *   until the PR merges (#278): Shipyard carries it through whatever fixing,
  *   conflict resolution and re-review the PR needs first, then squash-merges
  *   it on an engine as soon as one is free and the merge gate allows.
  *
@@ -369,7 +369,7 @@ export function reviewApprovalState(
 
 /**
  * Whether an open PR is parked for a person to review on GitHub, in Project
- * SDLC: yoke requested review after a clean self-review and has nothing more
+ * SDLC: Shipyard requested review after a clean self-review and has nothing more
  * to do on it until someone acts there. The dashboard's inbox lists it, with a
  * link, since nothing on the dashboard itself can move it on.
  *
@@ -377,7 +377,7 @@ export function reviewApprovalState(
  * `reviewApprovalState` does for a review-gated PR outside project mode: a PR
  * with an engine on it, merge conflicts, or a re-queue signal — returned to
  * draft, commented on, or its issue moved back to Ready on the board — is
- * yoke's to work, not a person's. Outside project mode a parked PR is approved
+ * Shipyard's to work, not a person's. Outside project mode a parked PR is approved
  * on the dashboard instead, so this is false there, as it is for `manual` PRs.
  */
 export function awaitsHumanReview(
@@ -413,7 +413,7 @@ function hasApproval(sessions: readonly AgentSession[]): boolean {
 
 /**
  * Whether a PR has a dashboard approval (#274). It stands until the PR merges
- * (#278), so all the work yoke does on the PR from then on carries out that
+ * (#278), so all the work Shipyard does on the PR from then on carries out that
  * approval: an engine claimed on such a PR is getting it merged because of
  * the approval, not doing something else to it (#276).
  */
@@ -705,7 +705,7 @@ export function buildPlan(
   const openIssueNumbers = new Set(issues.map((issue) => issue.number));
   // In focus mode, the only issues in scope are open issues carrying the
   // "focus" label. A pull request is in scope only when it advances one of
-  // these issues; otherwise yoke would keep reviewing/merging PRs for
+  // these issues; otherwise Shipyard would keep reviewing/merging PRs for
   // non-focus issues, defeating focus mode (the bug where focus mode still
   // worked on every issue that already had a PR).
   const focusIssueNumbers = new Set(
@@ -747,7 +747,7 @@ export function buildPlan(
   // where three PRs ready-for-review froze all three cylinders.
   let livePullRequestCount = 0;
   for (const pullRequest of pullRequests) {
-    // PRs labelled "manual" are parked: yoke plans no action for them and
+    // PRs labelled "manual" are parked: Shipyard plans no action for them and
     // does not count them against concurrency. Their linked issues are still
     // marked unavailable below, so the issue is not re-implemented.
     if (isManualPullRequest(pullRequest)) {

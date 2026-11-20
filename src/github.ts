@@ -2,6 +2,7 @@ import { join } from "node:path";
 
 import { parseClosingIssueNumbers, parseLinkedIssueNumbers } from "./orchestrator.js";
 import { FileSessionStore } from "./session-store.js";
+import { LEGACY_STATE_DIR_NAME, STATE_DIR_NAME } from "./state-migration.js";
 import { GitHubApiGateway } from "./github-gateway.js";
 import type {
   Commit,
@@ -104,25 +105,30 @@ interface PullRequestReviewThreadsQueryResponse {
 }
 
 /**
- * Hidden marker yoke prepends to every review it posts, so it can recognize
- * its own reviews later (see {@link isYokeReview}). This is the only review
+ * Hidden marker Shipyard prepends to every review it posts, so it can recognize
+ * its own reviews later (see {@link isShipyardReview}). This is the only review
  * marker ever written.
  */
-export const YOKE_REVIEW_MARKER = "<!-- yoke-review -->";
+export const SHIPYARD_REVIEW_MARKER = "<!-- shipyard-review -->";
 
 /**
- * Every review-marker spelling yoke recognizes on read, written spelling
- * first. Reviews posted before the vibrator → yoke rename still carry the old
- * spelling and must keep counting as yoke's own: otherwise an in-flight PR's
+ * Every review-marker spelling Shipyard recognizes on read, written spelling
+ * first. Reviews posted under the tool's earlier names still carry those
+ * spellings and must keep counting as Shipyard's own: otherwise an in-flight PR's
  * old reviews would be re-read as human feedback by
  * {@link GitHubClient.listPullRequestComments}, and its clean-review flag
  * (`hasCleanReviewOnHead`, shown on the dashboard) would flip off. Whether a
  * PR gets another self-review is decided from the session store's phase
  * history, not from these markers.
  *
- * Legacy `vibrator-review` spelling retained read-only since the 2026-09-17 rename (#237).
+ * Legacy spellings retained read-only: `yoke-review` since the 2026-11-20
+ * rename to Shipyard, `vibrator-review` since the 2026-09-17 rename (#237).
  */
-export const REVIEW_MARKERS: readonly string[] = [YOKE_REVIEW_MARKER, "<!-- vibrator-review -->"];
+export const REVIEW_MARKERS: readonly string[] = [
+  SHIPYARD_REVIEW_MARKER,
+  "<!-- yoke-review -->",
+  "<!-- vibrator-review -->",
+];
 
 interface ProjectMeta {
   id: string;
@@ -144,7 +150,7 @@ function isBranchProtectionMergeError(error: unknown): boolean {
 }
 
 /** True when `body` carries any spelling of the review marker (see {@link REVIEW_MARKERS}). */
-export function isYokeReview(body: string | null | undefined): boolean {
+export function isShipyardReview(body: string | null | undefined): boolean {
   return !!body && REVIEW_MARKERS.some((marker) => body.includes(marker));
 }
 
@@ -164,7 +170,7 @@ export interface PullRequestComment {
   /**
    * GitHub's numeric id for the comment (the issue-comment id, review id, or
    * review-thread-comment id depending on `kind`). Used both to skip
-   * Yoke's own comments and to attach reaction emoji.
+   * Shipyard's own comments and to attach reaction emoji.
    */
   id: number;
   author: string;
@@ -177,31 +183,37 @@ export interface PullRequestComment {
 }
 
 /**
- * Hidden marker appended to every comment Yoke posts. Used to tell
- * Yoke's own comments apart from human comments by content rather than by
- * author login — Yoke may run under the same GitHub account as a human
+ * Hidden marker appended to every comment Shipyard posts. Used to tell
+ * Shipyard's own comments apart from human comments by content rather than by
+ * author login — Shipyard may run under the same GitHub account as a human
  * reviewer, in which case login-based filtering would also discard the
  * human's comments.
  */
-export const YOKE_COMMENT_MARKER = "<!-- yoke:automated-comment -->";
+export const SHIPYARD_COMMENT_MARKER = "<!-- shipyard:automated-comment -->";
 
 /**
- * Every automated-comment-marker spelling yoke recognizes on read, written
- * spelling first. Comments posted before the vibrator → yoke rename still
- * carry the old spelling and must not be re-read as human feedback.
+ * Every automated-comment-marker spelling Shipyard recognizes on read, written
+ * spelling first. Comments posted under the tool's earlier names still carry
+ * those spellings and must not be re-read as human feedback.
  *
- * Legacy `vibrator:automated-comment` spelling retained read-only since the 2026-09-17 rename (#237).
+ * Legacy spellings retained read-only: `yoke:automated-comment` since the
+ * 2026-11-20 rename to Shipyard, `vibrator:automated-comment` since the
+ * 2026-09-17 rename (#237).
  */
-export const COMMENT_MARKERS: readonly string[] = [YOKE_COMMENT_MARKER, "<!-- vibrator:automated-comment -->"];
+export const COMMENT_MARKERS: readonly string[] = [
+  SHIPYARD_COMMENT_MARKER,
+  "<!-- yoke:automated-comment -->",
+  "<!-- vibrator:automated-comment -->",
+];
 
 /** True when `body` carries any spelling of the automated-comment marker (see {@link COMMENT_MARKERS}). */
-export function isYokeComment(body: string | null | undefined): boolean {
+export function isShipyardComment(body: string | null | undefined): boolean {
   return !!body && COMMENT_MARKERS.some((marker) => body.includes(marker));
 }
 
 /**
  * Login substrings (lowercased) identifying third-party code-review bots whose
- * feedback Yoke should treat as actionable, even though they post under a
+ * feedback Shipyard should treat as actionable, even though they post under a
  * `Bot` account. GitHub Copilot reviews appear under `Copilot` (inline
  * comments) and `copilot-pull-request-reviewer[bot]` (review summaries);
  * CodeRabbit posts as `coderabbitai[bot]`. Matched as substrings so the
@@ -267,7 +279,7 @@ export class GitHubClient {
       return await this.gateway.getAllPages<T>(path);
     } catch (error) {
       if ((error as NodeJS.ErrnoException & { statusCode?: number }).statusCode === 404) {
-        console.warn(`[yoke] WARNING: 404 for ${path} — skipping (check GitHub token permissions or repository slug).`);
+        console.warn(`[shipyard] WARNING: 404 for ${path} — skipping (check GitHub token permissions or repository slug).`);
         return [];
       }
       throw error;
@@ -283,7 +295,7 @@ export class GitHubClient {
 
   /**
    * Returns the GitHub login of the currently authenticated user (the bot
-   * account running yoke). Result is cached per client instance.
+   * account running Shipyard). Result is cached per client instance.
    */
   async getAuthenticatedLogin(): Promise<string> {
     if (!this.authenticatedLoginCache) {
@@ -303,19 +315,19 @@ export class GitHubClient {
    *   - review summaries, e.g. "Request changes" (`/pulls/{n}/reviews`)
    *   - inline review-thread comments (`/pulls/{n}/comments`)
    *
-   * Yoke's own automated comments are excluded two ways: by looking for
-   * the hidden automated-comment or review marker in any spelling yoke has
+   * Shipyard's own automated comments are excluded two ways: by looking for
+   * the hidden automated-comment or review marker in any spelling Shipyard has
    * ever written (see {@link COMMENT_MARKERS} and {@link REVIEW_MARKERS};
-   * login can't be used because Yoke may run under the same GitHub account
+   * login can't be used because Shipyard may run under the same GitHub account
    * as a human reviewer), and
    * by skipping any comment id in `options.excludeCommentIds` — the persisted
-   * set of ids Yoke has posted. Comments authored by noise bot accounts
+   * set of ids Shipyard has posted. Comments authored by noise bot accounts
    * (e.g. `github-actions[bot]`) are also excluded — but feedback from
    * recognized code-review bots (GitHub Copilot, CodeRabbit; see
    * {@link isReviewBot}) is kept and treated exactly like human feedback.
    *
    * Comments that already carry a 👀 ("eyes") reaction are also excluded:
-   * Yoke reacts 👀 to every comment it consumes (see {@link addEyesReaction}),
+   * Shipyard reacts 👀 to every comment it consumes (see {@link addEyesReaction}),
    * so the reaction marks a comment as already read and prevents it from being
    * fed into — and addressed by — the same review again on every cycle. (PR
    * review summaries have no reactions endpoint, so this filter does not apply
@@ -353,15 +365,15 @@ export class GitHubClient {
       }>(`/repos/${owner}/${repo}/pulls/${pullRequestNumber}/comments`),
     ]);
 
-    // True when a comment already carries a 👀 reaction — Yoke has read it.
+    // True when a comment already carries a 👀 reaction — Shipyard has read it.
     const alreadyRead = (reactions?: { eyes?: number }): boolean =>
       (reactions?.eyes ?? 0) > 0;
 
     // A comment counts as actionable feedback unless it was posted by a noise
     // bot account (a bot that is not a recognized code reviewer), carries one
-    // of Yoke's own markers (the automated-comment marker for issue
+    // of Shipyard's own markers (the automated-comment marker for issue
     // comments, or the review marker for posted reviews), or its id is in the
-    // persisted set of comments Yoke has posted.
+    // persisted set of comments Shipyard has posted.
     const isActionableFeedback = (
       id: number,
       user: { login?: string; type?: string } | null,
@@ -370,7 +382,7 @@ export class GitHubClient {
       if (excluded.has(id)) return false;
       if (user?.type === "Bot" && !isReviewBot(user.login)) return false;
       if (body === null) return true;
-      if (isYokeComment(body) || isYokeReview(body)) return false;
+      if (isShipyardComment(body) || isShipyardReview(body)) return false;
       return true;
     };
 
@@ -424,7 +436,7 @@ export class GitHubClient {
 
   /**
    * Adds the 👀 ("eyes") reaction to a PR comment, marking it as read by
-   * Yoke. Conversation comments and inline review-thread comments support
+   * Shipyard. Conversation comments and inline review-thread comments support
    * reactions; PR review summaries do not have a reactions endpoint, so those
    * are silently skipped. Failures are swallowed — a missing reaction must
    * never abort the surrounding action.
@@ -448,7 +460,7 @@ export class GitHubClient {
       });
     } catch (error) {
       console.warn(
-        `[yoke] Could not add 👀 reaction to comment ${comment.id} on PR: ${String(error)}`,
+        `[shipyard] Could not add 👀 reaction to comment ${comment.id} on PR: ${String(error)}`,
       );
     }
   }
@@ -556,7 +568,7 @@ export class GitHubClient {
       } while (after);
     } catch (error) {
       console.warn(
-        `[yoke] Could not fetch issue parent numbers — sub-issues may not be available on this repository: ` +
+        `[shipyard] Could not fetch issue parent numbers — sub-issues may not be available on this repository: ` +
         `${String(error)}. Parent/child blocking will be skipped.`,
       );
     }
@@ -621,7 +633,7 @@ export class GitHubClient {
           if (!featureUnavailable) {
             featureUnavailable = true;
             console.warn(
-              `[yoke] Could not fetch issue dependencies — the Issue Dependencies feature ` +
+              `[shipyard] Could not fetch issue dependencies — the Issue Dependencies feature ` +
               `may not be enabled on this repository (${statusCode}). ` +
               `GitHub-native "blocked by" relationships will be skipped.`,
             );
@@ -633,7 +645,7 @@ export class GitHubClient {
         // (skips it this cycle) instead of mistaking it for unblocked.
         issuesWithUnknownBlockers.add(issueNumber);
         console.warn(
-          `[yoke] Could not fetch dependencies for issue #${issueNumber}: ${String(error)}. ` +
+          `[shipyard] Could not fetch dependencies for issue #${issueNumber}: ${String(error)}. ` +
           `Treating its blocker status as unknown and not starting it this cycle.`,
         );
       }
@@ -823,12 +835,12 @@ export class GitHubClient {
       for (const node of pullRequests.nodes) {
         const issueNumbers = node.closingIssuesReferences?.nodes.map((reference) => reference.number) ?? [];
         const reviewNodes = node.reviews?.nodes ?? [];
-        // A "clean review on head" = a yoke-tagged review on the
+        // A "clean review on head" = a Shipyard-tagged review on the
         // current head sha that contains no inline comments and is not
         // a CHANGES_REQUESTED review.
         const hasCleanReviewOnHead = reviewNodes.some((review) => {
           if (review.commit?.oid !== node.headRefOid) return false;
-          if (!isYokeReview(review.body)) return false;
+          if (!isShipyardReview(review.body)) return false;
           if (review.state === "CHANGES_REQUESTED") return false;
           if ((review.comments?.totalCount ?? 0) !== 0) return false;
           return review.state === "APPROVED" || review.state === "COMMENTED";
@@ -948,7 +960,7 @@ export class GitHubClient {
     body: string;
     inlineComments: ReadonlyArray<PullRequestInlineComment>;
   }): Promise<void> {
-    const bodyWithMarker = `${YOKE_REVIEW_MARKER}\n\n${input.body}`.trim();
+    const bodyWithMarker = `${SHIPYARD_REVIEW_MARKER}\n\n${input.body}`.trim();
 
     const postReview = async (
       event: "APPROVE" | "COMMENT",
@@ -993,7 +1005,7 @@ export class GitHubClient {
         message.includes("Line could not be resolved")
       ) {
         console.warn(
-          `[yoke] Review inline comments could not be resolved to diff lines on PR #${input.pullRequestNumber}. ` +
+          `[shipyard] Review inline comments could not be resolved to diff lines on PR #${input.pullRequestNumber}. ` +
           `Falling back to body-only COMMENT review with ${input.inlineComments.length} comment(s) in body.`,
         );
         const commentSection = input.inlineComments
@@ -1024,15 +1036,15 @@ export class GitHubClient {
 
   /**
    * Posts a comment on a PR and returns its numeric id, so the caller can
-   * persist it and skip re-reading Yoke's own comment later.
+   * persist it and skip re-reading Shipyard's own comment later.
    */
   async postComment(pullRequestNumber: number, body: string): Promise<number> {
     // Append the hidden marker so listPullRequestComments can recognise this
-    // as Yoke's own comment even when Yoke runs under a human's
+    // as Shipyard's own comment even when Shipyard runs under a human's
     // GitHub account.
     const { id } = await this.createIssueComment(
       pullRequestNumber,
-      `${body}\n\n${YOKE_COMMENT_MARKER}`,
+      `${body}\n\n${SHIPYARD_COMMENT_MARKER}`,
     );
     return id;
   }
@@ -1326,8 +1338,8 @@ export class GitHubClient {
           : stalledAfterMs !== undefined && stalledSinceMs !== undefined && startedAtMs < stalledSinceMs
             ? `(status: ${run.status ?? "unknown"} — stalled: still not finished ` +
               `${Math.round(stalledAfterMs / 60_000)}+ minutes after it started; ` +
-              `yoke cancelled this PR's stalled workflow runs)`
-            : `(status: ${run.status ?? "unknown"} — still running; it had not finished when yoke read the checks)`;
+              `Shipyard cancelled this PR's stalled workflow runs)`
+            : `(status: ${run.status ?? "unknown"} — still running; it had not finished when Shipyard read the checks)`;
       return { name: run.name, logExcerpt: [statusNote, excerpt].filter(Boolean).join("\n") || "(no log excerpt available)" };
     });
   }
@@ -1342,7 +1354,7 @@ export class GitHubClient {
    *
    * Nothing outside that set is touched. A run that is younger than the
    * threshold is still progressing and is left to finish, however long the
-   * suite takes relative to yoke's poll interval. A run that belongs to a
+   * suite takes relative to Shipyard's poll interval. A run that belongs to a
    * different pull request — another branch, another SHA, or a run GitHub
    * attributes to another PR — is never cancelled, even if the API returns
    * it (the `head_sha` filter is re-checked here rather than trusted).
@@ -1760,7 +1772,7 @@ export class GitHubClient {
       ]);
     } catch (error) {
       console.warn(
-        `[yoke] Could not move issue #${issueNumber} to project status "${targetStatus}": ${String(error)}`,
+        `[shipyard] Could not move issue #${issueNumber} to project status "${targetStatus}": ${String(error)}`,
       );
       return;
     }
@@ -1768,7 +1780,7 @@ export class GitHubClient {
     const item = statuses.get(issueNumber);
     if (!item) {
       console.warn(
-        `[yoke] Issue #${issueNumber} is not in project #${projectNumber} — skipping status move.`,
+        `[shipyard] Issue #${issueNumber} is not in project #${projectNumber} — skipping status move.`,
       );
       return;
     }
@@ -1778,7 +1790,7 @@ export class GitHubClient {
     );
     if (!option) {
       console.warn(
-        `[yoke] Project #${projectNumber} has no status option "${targetStatus}" — skipping status move. ` +
+        `[shipyard] Project #${projectNumber} has no status option "${targetStatus}" — skipping status move. ` +
         `Available options: ${meta.statusOptions.map((o) => o.name).join(", ")}`,
       );
       return;
@@ -1860,12 +1872,12 @@ export async function loadSnapshot(
   const listingFailed = { issues: false, pullRequests: false };
   const [issues, pullRequests, agentSessions] = await Promise.all([
     gitHubClient.listOpenIssues().catch((error) => {
-      console.warn(`[yoke] Could not list open issues: ${String(error)}`);
+      console.warn(`[shipyard] Could not list open issues: ${String(error)}`);
       listingFailed.issues = true;
       return [];
     }),
     gitHubClient.listOpenPullRequests().catch((error) => {
-      console.warn(`[yoke] Could not list open pull requests: ${String(error)}`);
+      console.warn(`[shipyard] Could not list open pull requests: ${String(error)}`);
       listingFailed.pullRequests = true;
       return [];
     }),
@@ -1879,7 +1891,7 @@ export async function loadSnapshot(
     try {
       projectStatuses = await gitHubClient.fetchProjectIssueStatuses(projectConfig.projectNumber);
     } catch (error) {
-      console.warn(`[yoke] Could not fetch project statuses: ${String(error)}`);
+      console.warn(`[shipyard] Could not fetch project statuses: ${String(error)}`);
       projectStatuses = new Map();
     }
 
@@ -1938,21 +1950,24 @@ export async function loadSnapshot(
 }
 
 export function buildDefaultSessionStorePath(owner: string, repo: string): string {
-  return join(process.cwd(), ".yoke", `${owner}-${repo}-sessions.json`);
+  return join(process.cwd(), STATE_DIR_NAME, `${owner}-${repo}-sessions.json`);
 }
 
 /**
- * Where {@link buildDefaultSessionStorePath} pointed before the vibrator →
- * yoke rename. Read-only: at startup, a store found here with nothing yet at
- * the yoke path is moved to the yoke path once (see
- * `migrateLegacySessionStore`), so an upgraded deployment keeps its phase
+ * Where {@link buildDefaultSessionStorePath} pointed under the tool's earlier
+ * names, newest first. Read-only: at startup, a store found at the first of
+ * these that has one, with nothing yet at the current path, is moved to the
+ * current path once (see `migrateLegacySessionStore`; the whole `.yoke/`
+ * directory is usually moved before that, by `migrateLegacyState`), so an
+ * upgraded deployment keeps its phase
  * history. Without that move the planner would see no sessions and re-drive
  * every open PR — a fresh self-review, and in project mode a second
  * request-review — because whether a PR is re-reviewed is decided from the
  * session store alone, not from the review markers.
  *
- * Legacy `.vibrator/` directory retained read-only since the 2026-09-17 rename (#237).
+ * Legacy directories retained read-only: `.yoke/` since the 2026-11-20 rename
+ * to Shipyard, `.vibrator/` since the 2026-09-17 rename (#237).
  */
-export function buildLegacySessionStorePath(owner: string, repo: string): string {
-  return join(process.cwd(), ".vibrator", `${owner}-${repo}-sessions.json`);
+export function buildLegacySessionStorePaths(owner: string, repo: string): string[] {
+  return [LEGACY_STATE_DIR_NAME, ".vibrator"].map((dir) => join(process.cwd(), dir, `${owner}-${repo}-sessions.json`));
 }

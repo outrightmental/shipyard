@@ -723,13 +723,13 @@ export class Painter {
 
     let note: string;
     if (node.heads === 'burning') {
-      if (vitals.phase === 'shut-down') note = 'yoke has shut down';
+      if (vitals.phase === 'shut-down') note = 'Shipyard has shut down';
       else if (vitals.phase === 'shutting-down') note = 'finishing what is in flight, then stopping';
       else if (vitals.hold) note = 'every engine is parked';
       else if (node.count === 0) note = 'no engine is running an action';
       else note = node.count === 1 ? 'an engine is running an action' : 'engines are running actions';
     } else if (dark) {
-      note = 'nothing coming — yoke is shutting down';
+      note = 'nothing coming — Shipyard is shutting down';
     } else {
       // The levels its lines are at, in words: they are said by weight, not by place.
       note = node.levels.map(({ level, count: n }) => `${n} ${level}`).join(' · ');
@@ -1029,7 +1029,7 @@ export class Painter {
           : vitals.phase === 'shutting-down' ? 'STOPPING'
             : vitals.connection === 'disconnected' ? 'LOST' : 'CONNECTING';
         const color = down ? p.orange : vitals.connection === 'disconnected' ? p.red : p.trimDim;
-        label(down ? 'YOKE' : 'CONNECTION', x, rgba(color, 0.95));
+        label(down ? 'SHIPYARD' : 'CONNECTION', x, rgba(color, 0.95));
         this._text(ctx, text, x, valueY, HUD_SMALL_VALUE_STYLE, rgba(color, 1));
         return;
       }

@@ -137,7 +137,7 @@ export function initialState(): DashboardState {
     owner: '',
     repo: '',
     title: '',
-    brand: 'Yoke',
+    brand: 'Shipyard',
     fleet: null,
     notices: [],
     readOnly: false,
@@ -156,7 +156,7 @@ export function dashboardReducer(state: DashboardState, event: DashboardEvent): 
     case 'engine-shutdown':    return applyEngineShutdown(state, event.data, atMs);
     case 'cylinder-cancel':    return applyCylinderCancel(state, event.data, atMs);
     case 'shutdown-requested': return addToStream(freezePills({ ...state, shutdownRequested: true }), atMs, '⏹ Shutdown requested — engines will stop after current cycle', -1, 'warning');
-    case 'app-shutdown':       return addToStream(freezePills({ ...state, appShutdown: true }), atMs, '⏹ Yoke shutdown complete', -1, 'warning');
+    case 'app-shutdown':       return addToStream(freezePills({ ...state, appShutdown: true }), atMs, '⏹ Shipyard shutdown complete', -1, 'warning');
     case 'snapshot-update':    return applySnapshotUpdate(state, event.data, atMs);
     case 'lifecycle-update': {
       const next = applyLifecycleUpdate(state, event.data);
@@ -733,7 +733,7 @@ function applyUsageUpdate(state: DashboardState, data: Record<string, unknown>):
 const APPROVAL_STATES: readonly PullRequestApprovalState[] = ['loading', 'waiting', 'approved', 'refused', 'failed'];
 
 /**
- * Yoke's latest word on a PR's dashboard approval (#276) replaces the last.
+ * Shipyard's latest word on a PR's dashboard approval (#276) replaces the last.
  * The time it arrived is what the pill compares its own click with, so its
  * Queued gives way only to an answer that came after the press. Outcomes too
  * old to show are dropped on the way, so a stale refusal never comes back —
@@ -778,7 +778,7 @@ function applyPullRequestApproval(state: DashboardState, data: Record<string, un
  * arrived (#276): to the pill they are old answers, not new ones. How a press
  * of this dashboard's ended stays even once the server no longer replays it
  * (#278). An approval the server last said was under way and no longer
- * replays is not under way any more — yoke restarted, or it ended while the
+ * replays is not under way any more — Shipyard restarted, or it ended while the
  * page was away and its outcome has aged out — so it is dropped: the press
  * reads unanswered and is sent again, rather than read Queued for good on an
  * answer nothing will ever follow.
@@ -802,7 +802,7 @@ function keepArrivalTimes(
 }
 
 /**
- * Record a press of a pill's Approve button (#278), sent to yoke or not. It
+ * Record a press of a pill's Approve button (#278), sent to Shipyard or not. It
  * replaces any earlier press of that PR's, and stays until the PR leaves the
  * lifecycle, so the pill follows it whichever element draws the pill.
  */
@@ -818,9 +818,9 @@ export function recordApprovalPress(
 }
 
 /**
- * The presses of this dashboard's that yoke has not answered (#278): made
+ * The presses of this dashboard's that Shipyard has not answered (#278): made
  * while the connection was down, or sent and lost with it. The store sends
- * them again on reconnecting — yoke answers a repeat the way it did the
+ * them again on reconnecting — Shipyard answers a repeat the way it did the
  * first, so a press is never left waiting on an answer that is not coming.
  */
 export function unansweredApprovalPresses(state: DashboardState): ApprovalPress[] {
@@ -898,7 +898,7 @@ function applyWorkflowApproval(state: DashboardState, data: Record<string, unkno
     category: 'ci',
     label: 'WORKFLOW',
     stateBefore: `Workflow "${runName}" was awaiting approval`,
-    changeHow: 'Yoke automatically approved the workflow run',
+    changeHow: 'Shipyard automatically approved the workflow run',
     stateAfter: `✅ Workflow "${runName}" approved and queued`,
     excellence: 'CI pipeline unblocked — automated approval keeps development flowing',
     ...(runIdVal !== undefined ? { runId: runIdVal } : {}),
@@ -1036,7 +1036,7 @@ export class DashboardStore {
         fresh.multiProject = data.multiProject ?? false;
         // A fleet member's own screen: it shows, and takes no decisions.
         fresh.readOnly = data.readOnly === true;
-        fresh.brand = data.brand || 'Yoke';
+        fresh.brand = data.brand || 'Shipyard';
         if (typeof data.maxConcurrency === 'number') {
           fresh.maxConcurrency = data.maxConcurrency;
           fresh.cylinders = initCylinders(data.maxConcurrency);
@@ -1050,7 +1050,7 @@ export class DashboardStore {
   }
 
   /**
-   * Ask yoke to approve a review-gated PR and squash-merge it (#274), and
+   * Ask Shipyard to approve a review-gated PR and squash-merge it (#274), and
    * record the press so its pill follows it at once (#278). Returns false when
    * there is no live connection to send the request on: the press is sent
    * when the connection comes back.
@@ -1064,7 +1064,7 @@ export class DashboardStore {
     return sent;
   }
 
-  /** Send each press yoke has not answered, now the connection is back (#278). */
+  /** Send each press Shipyard has not answered, now the connection is back (#278). */
   private _resendUnansweredPresses(): void {
     const sent = unansweredApprovalPresses(this._state)
       .filter((press) => this._wsClient?.send(approveRequestMessage(press)) ?? false);

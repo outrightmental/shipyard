@@ -37,7 +37,7 @@ const MAX_DIRTY_RECTS = 40;
  * also renders everything it draws as ordinary markup, out of sight: the same
  * model, as headings, lists and links.
  */
-export class YokeField extends LitElement {
+export class ShipyardField extends LitElement {
   static override properties = {
     model: { attribute: false },
     railWidth: { type: Number },
@@ -509,8 +509,8 @@ export class YokeField extends LitElement {
           ${vitals.subtitle ? html`${vitals.subtitle}. ` : ''}${vitals.cycle > 0 ? html`Cycle ${vitals.cycle}. ` : ''}${vitals.countdown
             ? html`${vitals.countdown.held ? 'Waiting' : 'Next cycle in'} ${vitals.countdown.value}. `
             : ''}${vitals.usage.title}.
-          ${vitals.phase === 'shut-down' ? 'Yoke has shut down.' : vitals.phase === 'shutting-down' ? 'Yoke is shutting down.' : ''}
-          ${vitals.connection === 'disconnected' ? 'The connection to yoke is lost.' : ''}
+          ${vitals.phase === 'shut-down' ? 'Shipyard has shut down.' : vitals.phase === 'shutting-down' ? 'Shipyard is shutting down.' : ''}
+          ${vitals.connection === 'disconnected' ? 'The connection to Shipyard is lost.' : ''}
         </p>
         ${vitals.hold ? html`<p class="field-mirror-hold" role="status">
           Waiting <span class="hold-duration">${vitals.hold.remaining}</span>
@@ -545,4 +545,4 @@ export class YokeField extends LitElement {
   }
 }
 
-customElements.define('yoke-field', YokeField);
+customElements.define('shipyard-field', ShipyardField);

@@ -1,7 +1,9 @@
 import { execFile, spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { mkdir, mkdtemp, readdir, readFile, rm, stat, unlink, utimes } from "node:fs/promises";
 import { homedir } from "node:os";
+import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { LEGACY_STATE_DIR_NAME, STATE_DIR_NAME } from "./state-migration.js";
 import { currentGitHubToken, GitHubApiGateway, type GitHubTokenSource } from "./github-gateway.js";
 
 
@@ -38,7 +40,7 @@ class StatusBoard {
    * True only when the board (stderr) and the log stream (stdout) are the same
    * terminal. The board's cursor arithmetic assumes it owns the bottom `count`
    * rows; that assumption only holds — and only needs repairing — when another
-   * writer shares those rows. Under `yoke > log.txt` stdout is a file, so the
+   * writer shares those rows. Under `Shipyard > log.txt` stdout is a file, so the
    * board owns the terminal outright and must not try to erase anything.
    */
   private get sharedTty(): boolean {
@@ -185,7 +187,7 @@ export function setLogSink(sink: LogSink | undefined): void {
 }
 
 /**
- * Write one line of yoke's own log output. Always use this instead of
+ * Write one line of Shipyard's own log output. Always use this instead of
  * `console.log` while Claude runs may be in flight: it cooperates with the
  * multi-run status board so the line survives the board's next redraw.
  */
@@ -194,7 +196,7 @@ export function writeLogLine(line: string): void {
   try {
     logSink?.(line);
   } catch {
-    // A broken log file must never be the thing that stops yoke.
+    // A broken log file must never be the thing that stops Shipyard.
   }
 }
 
@@ -309,7 +311,7 @@ export function activeWaitKeys(): string[] {
  * repository / pull request branch so the CLI can read, modify, commit,
  * and (where applicable) push code.
  *
- * Every operation runs synchronously: `yoke` waits for Claude to
+ * Every operation runs synchronously: Shipyard waits for Claude to
  * finish, then continues the loop. This client opens the PR itself when
  * implementing an issue.
  */
@@ -338,7 +340,7 @@ export interface ImplementIssueParams {
 }
 
 export interface ImplementIssueResult {
-  /** Name of the branch the agent pushed commits to (e.g. `yoke/issue-42-…`). */
+  /** Name of the branch the agent pushed commits to (e.g. `shipyard/issue-42-…`). */
   branch: string;
   /** Title for the new pull request. */
   pullRequestTitle: string;
@@ -455,22 +457,22 @@ export interface AgentBranchUpdate {
  * transcript chatter, so we instruct it (via the prompt) to emit the
  * description exactly between these sentinels.
  */
-export const FINAL_DESCRIPTION_START_MARKER = "<<<YOKE_PR_BODY_START>>>";
-export const FINAL_DESCRIPTION_END_MARKER = "<<<YOKE_PR_BODY_END>>>";
+export const FINAL_DESCRIPTION_START_MARKER = "<<<SHIPYARD_PR_BODY_START>>>";
+export const FINAL_DESCRIPTION_END_MARKER = "<<<SHIPYARD_PR_BODY_END>>>";
 
 /**
  * Sentinel markers wrapping the JSON implementation-summary payload
  * (PR title + body) the Claude implementer must emit.
  */
-export const IMPLEMENTATION_PAYLOAD_START_MARKER = "<<<YOKE_IMPL_START>>>";
-export const IMPLEMENTATION_PAYLOAD_END_MARKER = "<<<YOKE_IMPL_END>>>";
+export const IMPLEMENTATION_PAYLOAD_START_MARKER = "<<<SHIPYARD_IMPL_START>>>";
+export const IMPLEMENTATION_PAYLOAD_END_MARKER = "<<<SHIPYARD_IMPL_END>>>";
 
 /**
  * Sentinel markers wrapping the JSON self-review payload — a per-comment
  * narrative of how each human comment was addressed.
  */
-export const SELF_REVIEW_PAYLOAD_START_MARKER = "<<<YOKE_REVIEW_START>>>";
-export const SELF_REVIEW_PAYLOAD_END_MARKER = "<<<YOKE_REVIEW_END>>>";
+export const SELF_REVIEW_PAYLOAD_START_MARKER = "<<<SHIPYARD_REVIEW_START>>>";
+export const SELF_REVIEW_PAYLOAD_END_MARKER = "<<<SHIPYARD_REVIEW_END>>>";
 
 interface ClaudeAgentClientOptions {
   /** Root directory under which per-PR / per-issue checkouts are created. */
@@ -502,12 +504,29 @@ interface ClaudeAgentClientOptions {
   claudeCommitModel?: string;
   /** Maximum milliseconds the Claude CLI is allowed to run before being killed. Defaults to 3 hours; set `claude_timeout_seconds` in env.yaml to change it. */
   claudeTimeoutMs?: number;
-  /** Directory under which each Claude run gets its own `TMPDIR`. Defaults to `~/.yoke/tmp`. */
+  /** Directory under which each Claude run gets its own `TMPDIR`. Defaults to `~/.shipyard/tmp`. */
   runTempRootDir?: string;
 }
 
-export function defaultCheckoutRootDir(): string {
-  return join(homedir(), ".yoke", "checkouts");
+/**
+ * `~/.shipyard/checkouts`. While a machine's checkouts are still where they
+ * were kept before the rename to Shipyard — their move at startup failed, see
+ * `migrateLegacyState` — they are used where they are instead, and moved at a
+ * later start.
+ */
+/** The prefix of every branch Shipyard creates. */
+export const BRANCH_PREFIX = "shipyard/";
+/**
+ * The prefix of the branches Shipyard created while it was called Yoke.
+ * Read-only, retained since the 2026-11-20 rename: an attempt left on one is
+ * carried on there (see `implementationBranch`); no new branch is given it.
+ */
+export const LEGACY_BRANCH_PREFIX = "yoke/";
+
+export function defaultCheckoutRootDir(home: string = homedir()): string {
+  const current = join(home, STATE_DIR_NAME, "checkouts");
+  const legacy = join(home, LEGACY_STATE_DIR_NAME, "checkouts");
+  return !existsSync(current) && existsSync(legacy) ? legacy : current;
 }
 
 // ─── Per-run scratch space ──────────────────────────────────────────────────
@@ -519,13 +538,13 @@ export function defaultCheckoutRootDir(): string {
 // now gets a private `TMPDIR` that is deleted when the run ends, however it ends.
 
 export function defaultRunTempRootDir(): string {
-  return join(homedir(), ".yoke", "tmp");
+  return join(homedir(), STATE_DIR_NAME, "tmp");
 }
 
 /**
- * The yoke process a run temp dir belongs to. Named `<pid>-<random>` so a
- * startup sweep can tell a crashed yoke's leftovers from a live yoke's runs,
- * including those of a second yoke sharing the same home directory.
+ * The Shipyard process a run temp dir belongs to. Named `<pid>-<random>` so a
+ * startup sweep can tell a crashed Shipyard process's leftovers from a live one's runs,
+ * including those of a second Shipyard process sharing the same home directory.
  */
 function runTempDirOwnerPid(name: string): number | undefined {
   const match = /^(\d+)-/.exec(name);
@@ -547,7 +566,7 @@ function isProcessAlive(pid: number): boolean {
 /**
  * The run temp dirs this process has created and not yet removed. The sweep
  * consults this rather than skipping every dir named with this process's pid:
- * a yoke restarted in a container is usually given the same pid as the one
+ * a Shipyard process restarted in a container is usually given the same pid as the one
  * that crashed, and its leftovers would otherwise never be swept.
  */
 const liveRunTempDirs = new Set<string>();
@@ -567,16 +586,16 @@ export async function removeRunTempDir(dir: string): Promise<void> {
     liveRunTempDirs.delete(resolve(dir));
   } catch (error) {
     writeLogLine(
-      `[yoke] Could not remove the run's temp dir ${dir}: ${error instanceof Error ? error.message : String(error)}`,
+      `[shipyard] Could not remove the run's temp dir ${dir}: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
 }
 
 /**
- * Remove the run temp dirs a yoke that is no longer running left behind — one
+ * Remove the run temp dirs a Shipyard process that is no longer running left behind — one
  * that crashed, or was killed, before its runs' cleanup could happen. Dirs of
- * another yoke that is still alive are left alone, and so are this process's
- * own runs still under way, and anything in the root that yoke did not name.
+ * another Shipyard process that is still alive are left alone, and so are this process's
+ * own runs still under way, and anything in the root that process did not name.
  * Returns the dirs removed.
  */
 export async function sweepOrphanedRunTempDirs(
@@ -606,7 +625,7 @@ export async function sweepOrphanedRunTempDirs(
 
 /**
  * The line every action prompt carries about scratch files, so an agent puts
- * them in its run's `TMPDIR` — which yoke deletes afterwards — rather than in a
+ * them in its run's `TMPDIR` — which Shipyard deletes afterwards — rather than in a
  * `/tmp/<name>` of its own invention that nothing ever removes.
  */
 export const SCRATCH_SPACE_INSTRUCTION =
@@ -736,7 +755,7 @@ const MAX_CAPTURED_STDERR_BYTES = 256 * 1024;
  * observed descendant process group, a fresh snapshot of anything still reachable
  * from claude, and claude's own group as a backstop. This registry tracks every
  * live child so a process-exit or termination signal can reap them before
- * yoke exits.
+ * Shipyard exits.
  *
  * The sweep runs often (every second) so a short claude run — e.g. the fast
  * haiku commit-model pass — still has its subtree recorded before it exits;
@@ -875,7 +894,7 @@ function killProcessTree(child: ChildProcess, signal: NodeJS.Signals): void {
   if (pid === undefined) return;
 
   const { children, infoByPid } = readProcessTable();
-  // Never signal our own process group — that would take yoke itself (and its
+  // Never signal our own process group — that would take Shipyard itself (and its
   // siblings) down. Claude's detached descendants live in other groups.
   const ownPgid = infoByPid.get(process.pid)?.pgid;
 
@@ -937,7 +956,7 @@ let childCleanupInstalled = false;
 
 /**
  * Install one-time handlers that reap every live child process group when
- * yoke exits or is asked to terminate. Without this, a graceful shutdown
+ * Shipyard exits or is asked to terminate. Without this, a graceful shutdown
  * (`process.exit(0)` after Escape/Ctrl-C) and an out-of-band `kill <pid>` both
  * orphan whatever `claude` trees are mid-run. `exit` does only synchronous work
  * (`process.kill` is synchronous), which is exactly what that handler allows.
@@ -963,7 +982,7 @@ function ensureChildCleanupHandlers(): void {
       // reported `info ok` over a run that had just lost six in-flight agents.
       const live = liveChildren.size;
       process.stderr.write(
-        `\n[yoke] received ${signal} — killing ${live} in-flight Claude run(s) and exiting.\n`,
+        `\n[shipyard] received ${signal} — killing ${live} in-flight Claude run(s) and exiting.\n`,
       );
       reapAll();
       // Conventional code for a signal death: 128 + signal number.
@@ -1081,10 +1100,10 @@ export function runCommand(
       // Windows passthrough: forward the child's piped stdout to ours so its
       // output still appears, but via a drained pipe instead of an inherited
       // console handle. `end: false` keeps our stdout open after the child's
-      // stream closes (otherwise the first finished command closes yoke's
+      // stream closes (otherwise the first finished command closes Shipyard's
       // stdout). On POSIX child.stdout is null (inherited), so this is a no-op.
       child.stdout?.pipe(process.stdout, { end: false });
-      // A broken downstream (e.g. terminal closed) must not crash yoke.
+      // A broken downstream (e.g. terminal closed) must not crash Shipyard.
       child.stdout?.on("error", () => {});
     }
 
@@ -1100,7 +1119,7 @@ export function runCommand(
     // Reap any process-group stragglers the direct child left behind. `claude`
     // normally tears down its own node-worker / MCP-server tree on exit, but
     // when it doesn't, those grandchildren reparent to launchd and hold ~1 GB
-    // apiece (see the killProcessTree note above). Timeouts and yoke
+    // apiece (see the killProcessTree note above). Timeouts and Shipyard
     // shutdown already group-kill; the *normal completion* and *error* paths
     // did not, so a long overnight run accumulated orphans until the machine
     // ran out of memory. The leader is already gone by the time these fire, so
@@ -1963,7 +1982,7 @@ function buildPushRecoveryBackupBranchName(branch: string): string {
     .replace(/-+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 64);
-  return `yoke/recovery-${sanitizedBranch || "branch"}-${Date.now()}`;
+  return `${BRANCH_PREFIX}recovery-${sanitizedBranch || "branch"}-${Date.now()}`;
 }
 
 export const DEFAULT_COMMIT_MODEL = "claude-haiku-4-5-20251001";
@@ -2062,13 +2081,14 @@ class DefaultClaudeAgentClient implements ClaudeAgentClient {
 
   async implementIssue(params: ImplementIssueParams): Promise<ImplementIssueResult> {
     assertClaudeQuotaAvailable();
-    const branch = `yoke/issue-${params.issueNumber}-${slugifyIssueTitle(params.issueTitle)}`;
+    const branchName = `issue-${params.issueNumber}-${slugifyIssueTitle(params.issueTitle)}`;
     const repoDir = await this.checkoutBaseBranch({
       owner: params.owner,
       repo: params.repo,
       baseBranch: params.baseBranch,
       identifier: `issue-${params.issueNumber}`,
     });
+    const branch = await this.implementationBranch(repoDir, params.baseBranch, branchName);
 
     const branchAlreadyExistsRemotely = await this.remoteBranchExists(repoDir, branch);
 
@@ -2089,7 +2109,7 @@ class DefaultClaudeAgentClient implements ClaudeAgentClient {
 
     if (salvageableCommits > 0) {
       writeLogLine(
-        `[yoke] Issue #${params.issueNumber}: resuming ${salvageableCommits} commit(s) left by an interrupted attempt on ${branch}.`,
+        `[shipyard] Issue #${params.issueNumber}: resuming ${salvageableCommits} commit(s) left by an interrupted attempt on ${branch}.`,
       );
     } else if (branchAlreadyExistsRemotely) {
       // Resetting onto the remote branch can still drop unpushed local commits,
@@ -2123,7 +2143,7 @@ class DefaultClaudeAgentClient implements ClaudeAgentClient {
       runFailure = error;
       const reason = error instanceof Error ? error.message.split("\n")[0] : String(error);
       writeLogLine(
-        `[yoke] Issue #${params.issueNumber}: Claude run failed (${reason}) — salvaging any committed work.`,
+        `[shipyard] Issue #${params.issueNumber}: Claude run failed (${reason}) — salvaging any committed work.`,
       );
     }
     const payload = extractImplementationPayload(stdout);
@@ -2139,7 +2159,7 @@ class DefaultClaudeAgentClient implements ClaudeAgentClient {
     ).trim();
     if (uncommitted) {
       console.warn(
-        `[yoke] Claude left uncommitted changes after implementation — committing automatically.`,
+        `[shipyard] Claude left uncommitted changes after implementation — committing automatically.`,
       );
       await runCommand("git", ["add", "--all"], { cwd: repoDir });
       await runCommand(
@@ -2211,6 +2231,23 @@ class DefaultClaudeAgentClient implements ClaudeAgentClient {
   }
 
   /** Count commits on `head` that are not reachable from `base`. Missing refs count as zero. */
+  /**
+   * The branch an issue is implemented on: `shipyard/<name>`, unless an
+   * attempt made before the rename to Shipyard left its work on the branch's
+   * earlier name, `yoke/<name>`, pushed or as unpushed local commits, and
+   * nothing is on `shipyard/<name>` yet. That attempt is carried on where it
+   * is, exactly as an attempt on the current name would be.
+   */
+  private async implementationBranch(repoDir: string, baseBranch: string, name: string): Promise<string> {
+    const current = `${BRANCH_PREFIX}${name}`;
+    const legacy = `${LEGACY_BRANCH_PREFIX}${name}`;
+    const hasWork = async (branch: string): Promise<boolean> =>
+      (await this.remoteBranchExists(repoDir, branch)) ||
+      (await this.countCommitsAhead(repoDir, `origin/${baseBranch}`, branch)) > 0;
+    if (await hasWork(current)) return current;
+    return (await hasWork(legacy)) ? legacy : current;
+  }
+
   private async countCommitsAhead(repoDir: string, base: string, head: string): Promise<number> {
     try {
       const out = await runCommand("git", ["rev-list", "--count", `${base}..${head}`], {
@@ -2242,11 +2279,11 @@ class DefaultClaudeAgentClient implements ClaudeAgentClient {
     try {
       await runCommand("git", ["branch", recoveryBranch, branch], { cwd: repoDir });
       writeLogLine(
-        `[yoke] Preserved ${ahead} unpushed commit(s) from ${branch} at ${recoveryBranch} before resetting onto ${startPoint}.`,
+        `[shipyard] Preserved ${ahead} unpushed commit(s) from ${branch} at ${recoveryBranch} before resetting onto ${startPoint}.`,
       );
     } catch (error) {
       writeLogLine(
-        `[yoke] Could not preserve unpushed commits on ${branch}: ${error instanceof Error ? error.message : String(error)}`,
+        `[shipyard] Could not preserve unpushed commits on ${branch}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }
@@ -2323,7 +2360,7 @@ class DefaultClaudeAgentClient implements ClaudeAgentClient {
         );
       }
       console.log(
-        `[yoke] Rebase onto origin/${params.baseRefName} produced conflicts for PR #${params.pullRequestNumber}; delegating conflict resolution to Claude.`,
+        `[shipyard] Rebase onto origin/${params.baseRefName} produced conflicts for PR #${params.pullRequestNumber}; delegating conflict resolution to Claude.`,
       );
     }
 
@@ -2545,7 +2582,7 @@ class DefaultClaudeAgentClient implements ClaudeAgentClient {
       return;
     }
     console.warn(
-      `[yoke] Canonical clone at ${canonicalDir} is unusable (git dir "${gitDir}", origin "${originUrl}"); discarding it and re-cloning.`,
+      `[shipyard] Canonical clone at ${canonicalDir} is unusable (git dir "${gitDir}", origin "${originUrl}"); discarding it and re-cloning.`,
     );
     await rm(canonicalDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
@@ -2745,7 +2782,7 @@ class DefaultClaudeAgentClient implements ClaudeAgentClient {
       await runCommand("git", ["rebase", "--abort"], { cwd: repoDir, captureStderr: true }).catch(
         async (error: unknown) => {
           console.warn(
-            `[yoke] \`git rebase --abort\` failed in ${repoDir}; clearing the rebase state with \`--quit\` and hard-resetting instead. ${error}`,
+            `[shipyard] \`git rebase --abort\` failed in ${repoDir}; clearing the rebase state with \`--quit\` and hard-resetting instead. ${error}`,
           );
           await runCommand("git", ["rebase", "--quit"], { cwd: repoDir, captureStderr: true }).catch(
             () => {
@@ -2773,7 +2810,7 @@ class DefaultClaudeAgentClient implements ClaudeAgentClient {
       await runCommand("git", ["merge", "--abort"], { cwd: repoDir, captureStderr: true }).catch(
         (error: unknown) => {
           console.warn(
-            `[yoke] \`git merge --abort\` failed in ${repoDir}; discarding the merge with a hard reset instead. ${error}`,
+            `[shipyard] \`git merge --abort\` failed in ${repoDir}; discarding the merge with a hard reset instead. ${error}`,
           );
         },
       );
@@ -2798,7 +2835,7 @@ class DefaultClaudeAgentClient implements ClaudeAgentClient {
         await runCommand("git", ["clean", "-fd"], { cwd: repoDir, captureStderr: true }).catch(
           (error: unknown) => {
             console.warn(
-              `[yoke] \`git clean -fd\` failed in ${repoDir}; continuing with the tree reset to HEAD. Surviving untracked files may be swept into the next commit by the \`git add --all\` safety net. ${error}`,
+              `[shipyard] \`git clean -fd\` failed in ${repoDir}; continuing with the tree reset to HEAD. Surviving untracked files may be swept into the next commit by the \`git add --all\` safety net. ${error}`,
             );
           },
         );
@@ -2926,14 +2963,14 @@ class DefaultClaudeAgentClient implements ClaudeAgentClient {
 
     if (options.allowForcePush) {
       console.warn(
-        `[yoke] Push for ${branch} was rejected as non-fast-forward. Preserved recovery point at ${backupBranch}; force-pushing because this branch was started fresh and our implementation is authoritative.`,
+        `[shipyard] Push for ${branch} was rejected as non-fast-forward. Preserved recovery point at ${backupBranch}; force-pushing because this branch was started fresh and our implementation is authoritative.`,
       );
       await this.runAuthenticatedGit([...pushArgs, "--force"], { cwd: repoDir, captureStderr: true });
       return;
     }
 
     console.warn(
-      `[yoke] Push for ${branch} was rejected as non-fast-forward. Preserved recovery point at ${backupBranch}; integrating origin/${branch} before retrying.`,
+      `[shipyard] Push for ${branch} was rejected as non-fast-forward. Preserved recovery point at ${backupBranch}; integrating origin/${branch} before retrying.`,
     );
 
     const maxRetries = 3;
@@ -2957,7 +2994,7 @@ class DefaultClaudeAgentClient implements ClaudeAgentClient {
         }
 
         console.warn(
-          `[yoke] Merge conflict while integrating origin/${branch} before push retry (${attempt}/${maxRetries}); delegating resolution to Claude.`,
+          `[shipyard] Merge conflict while integrating origin/${branch} before push retry (${attempt}/${maxRetries}); delegating resolution to Claude.`,
         );
         await this.runClaude(buildPushConflictResolutionPrompt(branch), repoDir, this.claudeInitialModel, this.claudeInitialEffort);
 
@@ -2989,12 +3026,15 @@ class DefaultClaudeAgentClient implements ClaudeAgentClient {
     // Removing ANTHROPIC_API_KEY forces the claude CLI to authenticate via
     // the subscription credentials in ~/.claude/.credentials.json.
     delete env.ANTHROPIC_API_KEY;
-    // Avoid Claude subprocesses inheriting Yoke's GitHub token.
+    // Avoid Claude subprocesses inheriting Shipyard's GitHub token.
     delete env.GH_TOKEN;
     delete env.GITHUB_TOKEN;
+    delete env.SHIPYARD_GITHUB_TOKEN;
+    // The tool's earlier names are still scrubbed (`YOKE_GITHUB_TOKEN` since the
+    // 2026-11-20 rename to Shipyard, `VIBRATOR_GITHUB_TOKEN` since the 2026-09-17
+    // rename, #237): a shell profile that has not been updated must not hand the
+    // PAT to Claude.
     delete env.YOKE_GITHUB_TOKEN;
-    // Legacy `VIBRATOR_GITHUB_TOKEN` still scrubbed since the 2026-09-17 rename (#237):
-    // a shell profile that has not been updated must not hand the PAT to Claude.
     delete env.VIBRATOR_GITHUB_TOKEN;
     const effectiveModel = modelOverride ?? this.claudeInitialModel;
     const modelArgs = effectiveModel ? ["--model", effectiveModel] : [];
@@ -3038,7 +3078,7 @@ class DefaultClaudeAgentClient implements ClaudeAgentClient {
 
     if (claudeTermsAcceptanceRequired) {
       throw new Error(
-        "Claude CLI account action required. Accept the updated Consumer Terms and Privacy Policy at claude.ai using the account shown in `claude /status`, then restart yoke.",
+        "Claude CLI account action required. Accept the updated Consumer Terms and Privacy Policy at claude.ai using the account shown in `claude /status`, then restart Shipyard.",
       );
     }
 
@@ -3083,7 +3123,7 @@ class DefaultClaudeAgentClient implements ClaudeAgentClient {
           throw error;
         }
         console.warn(
-          `[yoke] Claude prompt exceeded command-line length limits; retrying via stdin.`,
+          `[shipyard] Claude prompt exceeded command-line length limits; retrying via stdin.`,
         );
         result = await runClaudeCli(true);
       }
@@ -3115,7 +3155,7 @@ class DefaultClaudeAgentClient implements ClaudeAgentClient {
       if (isClaudeTermsAcceptanceMessage(message)) {
         claudeTermsAcceptanceRequired = true;
         throw new Error(
-          "Claude CLI account action required. Accept the updated Consumer Terms and Privacy Policy at claude.ai using the account shown in `claude /status`, then restart yoke.",
+          "Claude CLI account action required. Accept the updated Consumer Terms and Privacy Policy at claude.ai using the account shown in `claude /status`, then restart Shipyard.",
           { cause: error },
         );
       }

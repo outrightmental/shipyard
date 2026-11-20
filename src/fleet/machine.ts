@@ -12,9 +12,10 @@ import { commitOf } from "../shared/release.js";
  * a description of the host for the Fleet page, and the commit this checkout
  * is on.
  *
- * The home holds the enrollment and the token and nothing else of
- * Shipyard's. What the engines keep — checkouts, scratch, session history —
- * is where Yoke has always kept it.
+ * The home holds the enrollment and the token, and the member's own settings
+ * and log. What the engines keep is not tied to it: checkouts and scratch are
+ * in `~/.shipyard/checkouts` and `~/.shipyard/tmp` whatever `SHIPYARD_HOME`
+ * says, and session history is in `.shipyard/` in this checkout.
  */
 
 /** This checkout: the directory package.json is in. */

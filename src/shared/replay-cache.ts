@@ -2,7 +2,7 @@
  * Which of the events an engine pool emits a dashboard opened now must be
  * brought up to date with, and under what key.
  *
- * Yoke's dashboard server kept this in memory: a map of the latest event per
+ * Shipyard's dashboard server kept this in memory: a map of the latest event per
  * key, replayed to every browser that connected. Shipyard keeps the same map
  * per fleet member in its table (src/platform/relay.ts), so the rule for what
  * goes in it lives here, where the local dashboard server and the platform

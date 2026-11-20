@@ -482,7 +482,7 @@ test("announceWait ignores a deadline that has already passed", (t) => {
 
 test("a held agent refuses every operation before it touches git", async (t) => {
   withoutQuotaHold(t);
-  const checkoutRootDir = join(await mkdtemp(join(tmpdir(), "yoke-hold-")), "checkouts");
+  const checkoutRootDir = join(await mkdtemp(join(tmpdir(), "shipyard-hold-")), "checkouts");
   t.after(async () => { await rm(checkoutRootDir, { recursive: true, force: true }); });
 
   const client = createClaudeAgentClient({
@@ -626,7 +626,7 @@ test("validateClaudeAuth returns valid when credentials have no oauth section", 
 });
 
 test("selfReview does not report changes when only merging latest base advances HEAD", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "yoke-self-review-base-merge-"));
+  const root = await mkdtemp(join(tmpdir(), "shipyard-self-review-base-merge-"));
   const remoteDir = join(root, "remote.git");
   const seedDir = join(root, "seed");
   const binDir = join(root, "bin");
@@ -743,7 +743,7 @@ function captureModelAndEffortSnippet(modelLogPath: string, effortLogPath: strin
 }
 
 test("implementIssue passes claudeInitialModel and claudeInitialEffort to the claude CLI", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "yoke-initial-model-effort-"));
+  const root = await mkdtemp(join(tmpdir(), "shipyard-initial-model-effort-"));
   const remoteDir = join(root, "remote.git");
   const seedDir = join(root, "seed");
   const binDir = join(root, "bin");
@@ -753,7 +753,7 @@ test("implementIssue passes claudeInitialModel and claudeInitialEffort to the cl
   const claudeStubPath = join(binDir, "claude-stub.sh");
   const issueNumber = 301;
   const issueTitle = "Initial model wiring";
-  const branch = "yoke/issue-301-initial-model-wiring";
+  const branch = "shipyard/issue-301-initial-model-wiring";
 
   await mkdir(binDir, { recursive: true });
 
@@ -819,7 +819,7 @@ test("implementIssue passes claudeInitialModel and claudeInitialEffort to the cl
 });
 
 test("selfReview passes claudeReviewModel and claudeReviewEffort to the claude CLI", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "yoke-review-model-effort-"));
+  const root = await mkdtemp(join(tmpdir(), "shipyard-review-model-effort-"));
   const remoteDir = join(root, "remote.git");
   const seedDir = join(root, "seed");
   const binDir = join(root, "bin");
@@ -899,7 +899,7 @@ test("selfReview passes claudeReviewModel and claudeReviewEffort to the claude C
 });
 
 test("implementIssue cleans stale uncommitted state left by a prior interrupted run", async () => {
-  const root = await mkdtemp(join(tmpdir(), "yoke-stale-checkout-test-"));
+  const root = await mkdtemp(join(tmpdir(), "shipyard-stale-checkout-test-"));
   const remoteDir = join(root, "remote.git");
   const seedDir = join(root, "seed");
   const binDir = join(root, "bin");
@@ -908,7 +908,7 @@ test("implementIssue cleans stale uncommitted state left by a prior interrupted 
   const claudeStubPath = join(binDir, "claude-stub.sh");
   const issueNumber = 298;
   const issueTitle = "Affiliate Program Enhancements";
-  const branch = "yoke/issue-298-affiliate-program-enhancements";
+  const branch = "shipyard/issue-298-affiliate-program-enhancements";
 
   await mkdir(binDir, { recursive: true });
 
@@ -955,7 +955,7 @@ test("implementIssue cleans stale uncommitted state left by a prior interrupted 
     runOrThrow("git", ["config", "user.email", "prior@example.com"], issueCheckoutDir);
     // Put the dir on a stale feature branch with uncommitted changes,
     // matching the real-world failure where the prior run had switched
-    // to yoke/issue-N-... and left modifications.
+    // to shipyard/issue-N-... and left modifications.
     runOrThrow("git", ["checkout", "-b", branch], issueCheckoutDir);
     await writeFile(join(issueCheckoutDir, "tracked.txt"), "PRIOR INTERRUPTED EDIT\n", "utf8");
     await writeFile(join(issueCheckoutDir, "stale-untracked.txt"), "leftover\n", "utf8");
@@ -995,7 +995,7 @@ test("implementIssue cleans stale uncommitted state left by a prior interrupted 
 });
 
 test("implementIssue retries push by merging remote branch on non-fast-forward", async () => {
-  const root = await mkdtemp(join(tmpdir(), "yoke-nff-test-"));
+  const root = await mkdtemp(join(tmpdir(), "shipyard-nff-test-"));
   const remoteDir = join(root, "remote.git");
   const seedDir = join(root, "seed");
   const binDir = join(root, "bin");
@@ -1004,7 +1004,7 @@ test("implementIssue retries push by merging remote branch on non-fast-forward",
   const claudeStubPath = join(binDir, "claude-stub.sh");
   const issueNumber = 173;
   const issueTitle = "Gift Certificates";
-  const branch = "yoke/issue-173-gift-certificates";
+  const branch = "shipyard/issue-173-gift-certificates";
 
   await mkdir(binDir, { recursive: true });
 
@@ -1036,16 +1036,16 @@ test("implementIssue retries push by merging remote branch on non-fast-forward",
         "echo \"local change\" >> local.txt",
         "git add local.txt",
         "git commit -m \"agent local commit\"",
-        "RACE_DIR=\"$(mktemp -d \"${TMPDIR:-/tmp}/yoke-race-XXXXXX\")\"",
-        "git clone \"$YOKE_TEST_REMOTE\" \"$RACE_DIR/repo\" >/dev/null 2>&1",
+        "RACE_DIR=\"$(mktemp -d \"${TMPDIR:-/tmp}/shipyard-race-XXXXXX\")\"",
+        "git clone \"$SHIPYARD_TEST_REMOTE\" \"$RACE_DIR/repo\" >/dev/null 2>&1",
         "cd \"$RACE_DIR/repo\"",
-        "git checkout \"$YOKE_TEST_BRANCH\" >/dev/null 2>&1",
+        "git checkout \"$SHIPYARD_TEST_BRANCH\" >/dev/null 2>&1",
         "git config user.name \"Race Writer\"",
         "git config user.email \"race@example.com\"",
         "echo \"remote race change\" >> race.txt",
         "git add race.txt",
         "git commit -m \"race remote commit\" >/dev/null 2>&1",
-        "git push origin \"$YOKE_TEST_BRANCH\" >/dev/null 2>&1",
+        "git push origin \"$SHIPYARD_TEST_BRANCH\" >/dev/null 2>&1",
         `echo \"${IMPLEMENTATION_PAYLOAD_START_MARKER}\"`,
         "echo '{\"title\":\"Test PR\",\"body\":\"Closes #173\"}'",
         `echo \"${IMPLEMENTATION_PAYLOAD_END_MARKER}\"`,
@@ -1055,10 +1055,10 @@ test("implementIssue retries push by merging remote branch on non-fast-forward",
     );
     await chmod(claudeStubPath, 0o755);
 
-    const previousRemote = process.env.YOKE_TEST_REMOTE;
-    const previousBranch = process.env.YOKE_TEST_BRANCH;
-    process.env.YOKE_TEST_REMOTE = remoteDir;
-    process.env.YOKE_TEST_BRANCH = branch;
+    const previousRemote = process.env.SHIPYARD_TEST_REMOTE;
+    const previousBranch = process.env.SHIPYARD_TEST_BRANCH;
+    process.env.SHIPYARD_TEST_REMOTE = remoteDir;
+    process.env.SHIPYARD_TEST_BRANCH = branch;
 
     try {
       const client = createClaudeAgentClient({
@@ -1091,14 +1091,14 @@ test("implementIssue retries push by merging remote branch on non-fast-forward",
       assert.equal(result.headSha, remoteHeadSha);
     } finally {
       if (previousRemote === undefined) {
-        delete process.env.YOKE_TEST_REMOTE;
+        delete process.env.SHIPYARD_TEST_REMOTE;
       } else {
-        process.env.YOKE_TEST_REMOTE = previousRemote;
+        process.env.SHIPYARD_TEST_REMOTE = previousRemote;
       }
       if (previousBranch === undefined) {
-        delete process.env.YOKE_TEST_BRANCH;
+        delete process.env.SHIPYARD_TEST_BRANCH;
       } else {
-        process.env.YOKE_TEST_BRANCH = previousBranch;
+        process.env.SHIPYARD_TEST_BRANCH = previousBranch;
       }
     }
   } finally {
@@ -1107,7 +1107,7 @@ test("implementIssue retries push by merging remote branch on non-fast-forward",
 });
 
 test("implementIssue resolves merge conflicts during non-fast-forward push recovery", async () => {
-  const root = await mkdtemp(join(tmpdir(), "yoke-nff-conflict-test-"));
+  const root = await mkdtemp(join(tmpdir(), "shipyard-nff-conflict-test-"));
   const remoteDir = join(root, "remote.git");
   const seedDir = join(root, "seed");
   const binDir = join(root, "bin");
@@ -1116,7 +1116,7 @@ test("implementIssue resolves merge conflicts during non-fast-forward push recov
   const claudeStubPath = join(binDir, "claude-stub.sh");
   const issueNumber = 173;
   const issueTitle = "Gift Certificates";
-  const branch = "yoke/issue-173-gift-certificates";
+  const branch = "shipyard/issue-173-gift-certificates";
 
   await mkdir(binDir, { recursive: true });
 
@@ -1159,16 +1159,16 @@ test("implementIssue resolves merge conflicts during non-fast-forward push recov
         "echo \"local agent change\" > shared.txt",
         "git add shared.txt",
         "git commit -m \"agent local commit\"",
-        "RACE_DIR=\"$(mktemp -d \"${TMPDIR:-/tmp}/yoke-race-conflict-XXXXXX\")\"",
-        "git clone \"$YOKE_TEST_REMOTE\" \"$RACE_DIR/repo\" >/dev/null 2>&1",
+        "RACE_DIR=\"$(mktemp -d \"${TMPDIR:-/tmp}/shipyard-race-conflict-XXXXXX\")\"",
+        "git clone \"$SHIPYARD_TEST_REMOTE\" \"$RACE_DIR/repo\" >/dev/null 2>&1",
         "cd \"$RACE_DIR/repo\"",
-        "git checkout \"$YOKE_TEST_BRANCH\" >/dev/null 2>&1",
+        "git checkout \"$SHIPYARD_TEST_BRANCH\" >/dev/null 2>&1",
         "git config user.name \"Race Writer\"",
         "git config user.email \"race@example.com\"",
         "echo \"remote race change\" > shared.txt",
         "git add shared.txt",
         "git commit -m \"race remote conflicting commit\" >/dev/null 2>&1",
-        "git push origin \"$YOKE_TEST_BRANCH\" >/dev/null 2>&1",
+        "git push origin \"$SHIPYARD_TEST_BRANCH\" >/dev/null 2>&1",
         `echo \"${IMPLEMENTATION_PAYLOAD_START_MARKER}\"`,
         "echo '{\"title\":\"Test PR\",\"body\":\"Closes #173\"}'",
         `echo \"${IMPLEMENTATION_PAYLOAD_END_MARKER}\"`,
@@ -1178,10 +1178,10 @@ test("implementIssue resolves merge conflicts during non-fast-forward push recov
     );
     await chmod(claudeStubPath, 0o755);
 
-    const previousRemote = process.env.YOKE_TEST_REMOTE;
-    const previousBranch = process.env.YOKE_TEST_BRANCH;
-    process.env.YOKE_TEST_REMOTE = remoteDir;
-    process.env.YOKE_TEST_BRANCH = branch;
+    const previousRemote = process.env.SHIPYARD_TEST_REMOTE;
+    const previousBranch = process.env.SHIPYARD_TEST_BRANCH;
+    process.env.SHIPYARD_TEST_REMOTE = remoteDir;
+    process.env.SHIPYARD_TEST_BRANCH = branch;
 
     try {
       const client = createClaudeAgentClient({
@@ -1217,14 +1217,14 @@ test("implementIssue resolves merge conflicts during non-fast-forward push recov
       assert.equal(result.headSha, remoteHeadSha);
     } finally {
       if (previousRemote === undefined) {
-        delete process.env.YOKE_TEST_REMOTE;
+        delete process.env.SHIPYARD_TEST_REMOTE;
       } else {
-        process.env.YOKE_TEST_REMOTE = previousRemote;
+        process.env.SHIPYARD_TEST_REMOTE = previousRemote;
       }
       if (previousBranch === undefined) {
-        delete process.env.YOKE_TEST_BRANCH;
+        delete process.env.SHIPYARD_TEST_BRANCH;
       } else {
-        process.env.YOKE_TEST_BRANCH = previousBranch;
+        process.env.SHIPYARD_TEST_BRANCH = previousBranch;
       }
     }
   } finally {
@@ -1239,7 +1239,7 @@ test("implementIssue force-pushes when remote branch is created after a fresh st
   // a different commit.  Our push is rejected as non-fast-forward.  Because we
   // started fresh, our implementation is authoritative: we should force-push and
   // overwrite the stale race commit rather than merging it in.
-  const root = await mkdtemp(join(tmpdir(), "yoke-force-push-test-"));
+  const root = await mkdtemp(join(tmpdir(), "shipyard-force-push-test-"));
   const remoteDir = join(root, "remote.git");
   const seedDir = join(root, "seed");
   const binDir = join(root, "bin");
@@ -1248,7 +1248,7 @@ test("implementIssue force-pushes when remote branch is created after a fresh st
   const claudeStubPath = join(binDir, "claude-stub.sh");
   const issueNumber = 174;
   const issueTitle = "Force Push Test";
-  const branch = "yoke/issue-174-force-push-test";
+  const branch = "shipyard/issue-174-force-push-test";
 
   await mkdir(binDir, { recursive: true });
 
@@ -1279,16 +1279,16 @@ test("implementIssue force-pushes when remote branch is created after a fresh st
         // Race: a concurrent process creates the feature branch on remote from
         // main with a completely different commit.  This makes our upcoming push
         // a non-fast-forward.
-        "RACE_DIR=\"$(mktemp -d \"${TMPDIR:-/tmp}/yoke-force-push-race-XXXXXX\")\"",
-        "git clone \"$YOKE_TEST_REMOTE\" \"$RACE_DIR/repo\" >/dev/null 2>&1",
+        "RACE_DIR=\"$(mktemp -d \"${TMPDIR:-/tmp}/shipyard-force-push-race-XXXXXX\")\"",
+        "git clone \"$SHIPYARD_TEST_REMOTE\" \"$RACE_DIR/repo\" >/dev/null 2>&1",
         "cd \"$RACE_DIR/repo\"",
-        "git checkout -b \"$YOKE_TEST_BRANCH\" >/dev/null 2>&1",
+        "git checkout -b \"$SHIPYARD_TEST_BRANCH\" >/dev/null 2>&1",
         "git config user.name \"Race Writer\"",
         "git config user.email \"race@example.com\"",
         "echo \"stale content\" > stale.txt",
         "git add stale.txt",
         "git commit -m \"stale race commit that should be overwritten\" >/dev/null 2>&1",
-        "git push origin \"$YOKE_TEST_BRANCH\" >/dev/null 2>&1",
+        "git push origin \"$SHIPYARD_TEST_BRANCH\" >/dev/null 2>&1",
         `echo \"${IMPLEMENTATION_PAYLOAD_START_MARKER}\"`,
         "echo '{\"title\":\"Test PR\",\"body\":\"Closes #174\"}'",
         `echo \"${IMPLEMENTATION_PAYLOAD_END_MARKER}\"`,
@@ -1298,10 +1298,10 @@ test("implementIssue force-pushes when remote branch is created after a fresh st
     );
     await chmod(claudeStubPath, 0o755);
 
-    const previousRemote = process.env.YOKE_TEST_REMOTE;
-    const previousBranch = process.env.YOKE_TEST_BRANCH;
-    process.env.YOKE_TEST_REMOTE = remoteDir;
-    process.env.YOKE_TEST_BRANCH = branch;
+    const previousRemote = process.env.SHIPYARD_TEST_REMOTE;
+    const previousBranch = process.env.SHIPYARD_TEST_BRANCH;
+    process.env.SHIPYARD_TEST_REMOTE = remoteDir;
+    process.env.SHIPYARD_TEST_BRANCH = branch;
 
     try {
       const client = createClaudeAgentClient({
@@ -1335,14 +1335,14 @@ test("implementIssue force-pushes when remote branch is created after a fresh st
       assert.equal(result.headSha, remoteHeadSha);
     } finally {
       if (previousRemote === undefined) {
-        delete process.env.YOKE_TEST_REMOTE;
+        delete process.env.SHIPYARD_TEST_REMOTE;
       } else {
-        process.env.YOKE_TEST_REMOTE = previousRemote;
+        process.env.SHIPYARD_TEST_REMOTE = previousRemote;
       }
       if (previousBranch === undefined) {
-        delete process.env.YOKE_TEST_BRANCH;
+        delete process.env.SHIPYARD_TEST_BRANCH;
       } else {
-        process.env.YOKE_TEST_BRANCH = previousBranch;
+        process.env.SHIPYARD_TEST_BRANCH = previousBranch;
       }
     }
   } finally {
@@ -1350,8 +1350,89 @@ test("implementIssue force-pushes when remote branch is created after a fresh st
   }
 });
 
+test("implementIssue carries on an attempt pushed under the branch's pre-rename name", async () => {
+  // An issue whose earlier attempt pushed `yoke/issue-175-…` (the prefix
+  // before the rename to Shipyard) and no PR yet: the next attempt builds on
+  // that branch, as it would on `shipyard/issue-175-…`, instead of starting
+  // over on a new branch and leaving the work behind.
+  const root = await mkdtemp(join(tmpdir(), "shipyard-legacy-branch-test-"));
+  const remoteDir = join(root, "remote.git");
+  const seedDir = join(root, "seed");
+  const binDir = join(root, "bin");
+  const checkoutRootDir = join(root, "checkouts");
+  const verifyDir = join(root, "verify");
+  const claudeStubPath = join(binDir, "claude-stub.sh");
+  const legacyBranch = "yoke/issue-175-carry-on";
+
+  await mkdir(binDir, { recursive: true });
+
+  try {
+    runOrThrow("git", ["init", "--bare", "-b", "main", remoteDir], root);
+    runOrThrow("git", ["clone", remoteDir, seedDir], root);
+    runOrThrow("git", ["config", "user.name", "Seed User"], seedDir);
+    runOrThrow("git", ["config", "user.email", "seed@example.com"], seedDir);
+    await writeFile(join(seedDir, "README.md"), "# test\n", "utf8");
+    runOrThrow("git", ["add", "README.md"], seedDir);
+    runOrThrow("git", ["commit", "-m", "initial main commit"], seedDir);
+    runOrThrow("git", ["branch", "-M", "main"], seedDir);
+    runOrThrow("git", ["push", "-u", "origin", "main"], seedDir);
+    runOrThrow("git", ["checkout", "-b", legacyBranch], seedDir);
+    await writeFile(join(seedDir, "earlier.txt"), "earlier\n", "utf8");
+    runOrThrow("git", ["add", "earlier.txt"], seedDir);
+    runOrThrow("git", ["commit", "-m", "work from before the rename"], seedDir);
+    runOrThrow("git", ["push", "-u", "origin", legacyBranch], seedDir);
+
+    await writeFile(
+      claudeStubPath,
+      [
+        "#!/bin/sh",
+        "set -eu",
+        "git config user.name \"Claude Stub\"",
+        "git config user.email \"claude-stub@example.com\"",
+        "echo \"more\" > more.txt",
+        "git add more.txt",
+        "git commit -m \"work carried on\"",
+        `echo \"${IMPLEMENTATION_PAYLOAD_START_MARKER}\"`,
+        "echo '{\"title\":\"Test PR\",\"body\":\"Closes #175\"}'",
+        `echo \"${IMPLEMENTATION_PAYLOAD_END_MARKER}\"`,
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    await chmod(claudeStubPath, 0o755);
+
+    const client = createClaudeAgentClient({
+      checkoutRootDir,
+      claudeCommand: claudeStubPath,
+      githubToken: "test-token",
+      repositoryCloneUrl: remoteDir,
+      claudeTimeoutMs: 120000,
+    });
+
+    const result = await client.implementIssue({
+      owner: "example",
+      repo: "repo",
+      issueNumber: 175,
+      issueTitle: "Carry On",
+      issueBody: "Carry on the earlier attempt.",
+      baseBranch: "main",
+    });
+
+    assert.equal(result.branch, legacyBranch);
+    runOrThrow("git", ["clone", remoteDir, verifyDir], root);
+    runOrThrow("git", ["checkout", legacyBranch], verifyDir);
+    const history = runOrThrow("git", ["log", "--format=%s", "-n", "20"], verifyDir);
+    assert.match(history, /work carried on/);
+    assert.match(history, /work from before the rename/);
+    const remoteBranches = runOrThrow("git", ["branch", "-r"], verifyDir);
+    assert.doesNotMatch(remoteBranches, /shipyard\/issue-175/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("generateFinalDescription passes claudeCommitModel to claude CLI and closes stdin", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "yoke-commit-model-test-"));
+  const root = await mkdtemp(join(tmpdir(), "shipyard-commit-model-test-"));
   const remoteDir = join(root, "remote.git");
   const seedDir = join(root, "seed");
   const binDir = join(root, "bin");
@@ -1391,7 +1472,7 @@ test("generateFinalDescription passes claudeCommitModel to claude CLI and closes
         "set -eu",
         "STDIN_STATE=$(node -e \"const timer = setTimeout(() => { process.stdout.write('waiting'); process.exit(0); }, 200); process.stdin.on('end', () => { clearTimeout(timer); process.stdout.write('eof'); }); process.stdin.once('data', () => { clearTimeout(timer); process.stdout.write('data'); }); process.stdin.resume();\")",
         `printf '%s' \"$STDIN_STATE\" > \"${stdinLogPath}\"`,
-        `printf '%s|%s|%s|%s' "\${GH_TOKEN:-unset}" "\${GITHUB_TOKEN:-unset}" "\${YOKE_GITHUB_TOKEN:-unset}" "\${VIBRATOR_GITHUB_TOKEN:-unset}" > \"${tokenEnvLogPath}\"`,
+        `printf '%s|%s|%s|%s|%s' "\${GH_TOKEN:-unset}" "\${GITHUB_TOKEN:-unset}" "\${SHIPYARD_GITHUB_TOKEN:-unset}" "\${YOKE_GITHUB_TOKEN:-unset}" "\${VIBRATOR_GITHUB_TOKEN:-unset}" > \"${tokenEnvLogPath}\"`,
         // Capture model arg: parse --model <value> from $@
         "MODEL_USED=\"(none)\"",
         "while [ $# -gt 0 ]; do",
@@ -1424,15 +1505,17 @@ test("generateFinalDescription passes claudeCommitModel to claude CLI and closes
     const previousTokens = {
       GH_TOKEN: process.env.GH_TOKEN,
       GITHUB_TOKEN: process.env.GITHUB_TOKEN,
+      SHIPYARD_GITHUB_TOKEN: process.env.SHIPYARD_GITHUB_TOKEN,
       YOKE_GITHUB_TOKEN: process.env.YOKE_GITHUB_TOKEN,
       VIBRATOR_GITHUB_TOKEN: process.env.VIBRATOR_GITHUB_TOKEN,
     };
     process.env.GH_TOKEN = "gh-token";
     process.env.GITHUB_TOKEN = "github-token";
-    process.env.YOKE_GITHUB_TOKEN = "yoke-token";
-    // The pre-rename name (#237): a shell profile that still exports it must
-    // not leak the PAT to Claude either.
-    process.env.VIBRATOR_GITHUB_TOKEN = "legacy-token";
+    process.env.SHIPYARD_GITHUB_TOKEN = "shipyard-token";
+    // The earlier names: a shell profile that still exports one must not leak
+    // the PAT to Claude either.
+    process.env.YOKE_GITHUB_TOKEN = "legacy-token";
+    process.env.VIBRATOR_GITHUB_TOKEN = "older-legacy-token";
 
     try {
       const client = createClaudeAgentClient({
@@ -1462,7 +1545,7 @@ test("generateFinalDescription passes claudeCommitModel to claude CLI and closes
       const tokenEnv = (await readFile(tokenEnvLogPath, "utf8")).trim();
       assert.equal(modelUsed, "claude-haiku-test-model", "should pass claudeCommitModel to claude CLI");
       assert.equal(stdinState, "eof", "should close stdin for non-interactive Claude runs");
-      assert.equal(tokenEnv, "unset|unset|unset|unset", "should strip GitHub token env vars (including the legacy name) from Claude");
+      assert.equal(tokenEnv, "unset|unset|unset|unset|unset", "should strip GitHub token env vars (including the legacy names) from Claude");
     } finally {
       for (const [key, value] of Object.entries(previousTokens)) {
         if (value === undefined) delete process.env[key];
@@ -1637,7 +1720,7 @@ test("implementIssue creates a canonical clone and uses linked worktrees for tas
   // 2. Creates task directories as linked git worktrees (`.git` is a file, not
   //    a directory), avoiding a full network clone per issue.
   // 3. Reuses the canonical clone without re-cloning for a second task.
-  const root = await mkdtemp(join(tmpdir(), "yoke-canonical-test-"));
+  const root = await mkdtemp(join(tmpdir(), "shipyard-canonical-test-"));
   const remoteDir = join(root, "remote.git");
   const seedDir = join(root, "seed");
   const binDir = join(root, "bin");
@@ -1738,7 +1821,7 @@ test("implementIssue repairs a leftover interrupted clone with an unborn HEAD", 
   // "ambiguous argument 'HEAD'", so the engine could never make progress.
   // The checkout must detect the unusable HEAD and recreate the directory as a
   // linked worktree instead of looping.
-  const root = await mkdtemp(join(tmpdir(), "yoke-unborn-head-test-"));
+  const root = await mkdtemp(join(tmpdir(), "shipyard-unborn-head-test-"));
   const remoteDir = join(root, "remote.git");
   const seedDir = join(root, "seed");
   const binDir = join(root, "bin");
@@ -1832,7 +1915,7 @@ test("implementIssue collapses a canonical clone whose single-valued git config 
   // code path could ever remove the extra value. Writing with `--replace-all`
   // collapses however many values are present down to the one we want, so the
   // checkout converges instead of latching.
-  const root = await mkdtemp(join(tmpdir(), "yoke-dup-config-test-"));
+  const root = await mkdtemp(join(tmpdir(), "shipyard-dup-config-test-"));
   const remoteDir = join(root, "remote.git");
   const seedDir = join(root, "seed");
   const binDir = join(root, "bin");
@@ -1951,7 +2034,7 @@ test("implementIssue converges a legacy regular clone whose git config keys were
   // recreate self-heal — so a duplicated key there is permanent for that
   // checkout too, and no worktree-based test can reach the line. Several such
   // legacy checkouts exist on real machines.
-  const root = await mkdtemp(join(tmpdir(), "yoke-legacy-dup-config-test-"));
+  const root = await mkdtemp(join(tmpdir(), "shipyard-legacy-dup-config-test-"));
   const remoteDir = join(root, "remote.git");
   const seedDir = join(root, "seed");
   const binDir = join(root, "bin");
@@ -2056,7 +2139,7 @@ test("concurrent implementIssue calls share one canonical clone without collidin
   //
   // So this asserts BOTH: that concurrent calls all succeed, and that the
   // canonical clone is left with exactly one refspec.
-  const root = await mkdtemp(join(tmpdir(), "yoke-concurrent-canonical-test-"));
+  const root = await mkdtemp(join(tmpdir(), "shipyard-concurrent-canonical-test-"));
   const remoteDir = join(root, "remote.git");
   const seedDir = join(root, "seed");
   const binDir = join(root, "bin");
@@ -2162,7 +2245,7 @@ test("implementIssue clears a stale index.lock left by a killed git process", as
   // stale lock does not stop `git rev-parse --verify HEAD` resolving, so
   // `ensureWorktreeCheckout` took its reuse path and returned before the
   // remove-and-recreate repair. The task directory was wedged permanently.
-  const root = await mkdtemp(join(tmpdir(), "yoke-stale-index-lock-test-"));
+  const root = await mkdtemp(join(tmpdir(), "shipyard-stale-index-lock-test-"));
   const remoteDir = join(root, "remote.git");
   const seedDir = join(root, "seed");
   const binDir = join(root, "bin");
@@ -2267,7 +2350,7 @@ test("implementIssue clears a stale config.lock that even --replace-all cannot c
   // canonical clone exits 255 ("could not lock config file") forever. Nothing
   // removed it, and crucially `--replace-all` does NOT cure this one: it is a
   // second permanent wedge sitting behind the duplicated-refspec fix.
-  const root = await mkdtemp(join(tmpdir(), "yoke-stale-config-lock-test-"));
+  const root = await mkdtemp(join(tmpdir(), "shipyard-stale-config-lock-test-"));
   const remoteDir = join(root, "remote.git");
   const seedDir = join(root, "seed");
   const binDir = join(root, "bin");
@@ -2368,7 +2451,7 @@ test("implementIssue re-clones a canonical clone left unusable by an interrupted
   // checkout root here is placed inside an outer repo so a health check that
   // merely ran `rev-parse` without comparing the answer to this directory would
   // wrongly conclude the broken clone is fine.
-  const root = await mkdtemp(join(tmpdir(), "yoke-unusable-canonical-test-"));
+  const root = await mkdtemp(join(tmpdir(), "shipyard-unusable-canonical-test-"));
   const remoteDir = join(root, "remote.git");
   const seedDir = join(root, "seed");
   const binDir = join(root, "bin");
@@ -2475,7 +2558,7 @@ test("implementIssue recovers a checkout wedged by a merge `git merge --abort` r
   // run (a regenerated snapshot, say). Treating the refusal as fatal wedged the
   // task directory permanently — every later run re-entered the same state and
   // re-ran the same doomed command, so the engine never made progress.
-  const root = await mkdtemp(join(tmpdir(), "yoke-merge-abort-refusal-"));
+  const root = await mkdtemp(join(tmpdir(), "shipyard-merge-abort-refusal-"));
   const remoteDir = join(root, "remote.git");
   const seedDir = join(root, "seed");
   const binDir = join(root, "bin");
@@ -2570,7 +2653,7 @@ test("implementIssue recovers a checkout wedged by a merge `git merge --abort` r
       baseBranch: "main",
     });
 
-    assert.equal(result.branch, "yoke/issue-1-first-task");
+    assert.equal(result.branch, "shipyard/issue-1-first-task");
 
     // The leftover merge and the stray working-tree edit must both be gone.
     const mergeHeadProbe = spawnSync("git", ["rev-parse", "--verify", "--quiet", "MERGE_HEAD"], {
@@ -2594,7 +2677,7 @@ test("implementIssue recovers a checkout wedged by a rebase `git rebase --abort`
   // interrupted run can leave behind) and exits non-zero with the rebase still
   // registered, so the checkout stays mid-rebase forever. `--quit` drops the
   // state without touching the tree, and the hard reset does the cleanup.
-  const root = await mkdtemp(join(tmpdir(), "yoke-rebase-abort-refusal-"));
+  const root = await mkdtemp(join(tmpdir(), "shipyard-rebase-abort-refusal-"));
   const remoteDir = join(root, "remote.git");
   const seedDir = join(root, "seed");
   const binDir = join(root, "bin");
@@ -2688,7 +2771,7 @@ test("implementIssue recovers a checkout wedged by a rebase `git rebase --abort`
       baseBranch: "main",
     });
 
-    assert.equal(result.branch, "yoke/issue-1-first-task");
+    assert.equal(result.branch, "shipyard/issue-1-first-task");
     assert.equal(
       await stat(join(taskGitDir, "rebase-merge"))
         .then(() => true)
@@ -2877,14 +2960,14 @@ async function recordedTmpdirs(tmpdirLogPath: string): Promise<string[]> {
 }
 
 test("a reaped issue checkout keeps its branch in _main, is recreated by the next run, and each run's TMPDIR is gone after it", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "yoke-reap-issue-"));
+  const root = await mkdtemp(join(tmpdir(), "shipyard-reap-issue-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const { remoteDir } = await seedRemote(root);
   const checkoutRootDir = join(root, "checkouts");
   const runTempRootDir = join(root, "run-tmp");
   const tmpdirLogPath = join(root, "tmpdirs.txt");
   const claudeStubPath = join(root, "claude-stub.sh");
-  const branch = "yoke/issue-401-reap-me";
+  const branch = "shipyard/issue-401-reap-me";
   await writeFile(
     claudeStubPath,
     [
@@ -2951,7 +3034,7 @@ test("a reaped issue checkout keeps its branch in _main, is recreated by the nex
 });
 
 test("a reaped PR checkout keeps its branch in _main and is recreated by the next run", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "yoke-reap-pr-"));
+  const root = await mkdtemp(join(tmpdir(), "shipyard-reap-pr-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const prBranch = "feature/reap-pr";
   const prNumber = 402;
@@ -3005,7 +3088,7 @@ test("a reaped PR checkout keeps its branch in _main and is recreated by the nex
 });
 
 test("a run killed on timeout still has its TMPDIR removed", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "yoke-run-tmp-timeout-"));
+  const root = await mkdtemp(join(tmpdir(), "shipyard-run-tmp-timeout-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const { remoteDir } = await seedRemote(root);
   const runTempRootDir = join(root, "run-tmp");
@@ -3047,21 +3130,21 @@ test("a run killed on timeout still has its TMPDIR removed", async (t) => {
   await assert.rejects(stat(tmpdirs[0]!), "the timed-out run's TMPDIR was removed");
 });
 
-test("the startup sweep removes run temp dirs a dead yoke left, and this process's that are no longer running", async (t) => {
-  const rootDir = await mkdtemp(join(tmpdir(), "yoke-run-tmp-sweep-"));
+test("the startup sweep removes run temp dirs a dead Shipyard left, and this process's that are no longer running", async (t) => {
+  const rootDir = await mkdtemp(join(tmpdir(), "shipyard-run-tmp-sweep-"));
   t.after(() => rm(rootDir, { recursive: true, force: true }));
   const deadPid = spawnSync("true").pid!;
-  const deadYokes = join(rootDir, `${deadPid}-abc123`);
-  // A yoke restarted in a container often gets the pid the crashed one had.
+  const deadEngines = join(rootDir, `${deadPid}-abc123`);
+  // A Shipyard process restarted in a container often gets the pid the crashed one had.
   const samePidLeftover = join(rootDir, `${process.pid}-left0ver`);
   const notOurs = join(rootDir, "something-else");
-  for (const dir of [deadYokes, samePidLeftover, notOurs]) {
+  for (const dir of [deadEngines, samePidLeftover, notOurs]) {
     await mkdir(join(dir, "node22"), { recursive: true });
   }
   const live = await createRunTempDir(rootDir);
   t.after(() => removeRunTempDir(live));
 
   const removed = await sweepOrphanedRunTempDirs(rootDir);
-  assert.deepEqual(removed.sort(), [deadYokes, samePidLeftover].sort());
+  assert.deepEqual(removed.sort(), [deadEngines, samePidLeftover].sort());
   assert.deepEqual((await readdir(rootDir)).sort(), [basename(live), "something-else"].sort());
 });

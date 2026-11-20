@@ -152,11 +152,11 @@ export interface ActionSessionStore {
   ): Promise<unknown>;
   /** Mark a session failed, so an interrupted run still leaves a record. */
   failSession?(sessionId: string): Promise<unknown>;
-  /** Record the ISO timestamp of the most recent PR comment yoke has read. */
+  /** Record the ISO timestamp of the most recent PR comment Shipyard has read. */
   setLastReadCommentAt?(pullRequestNumber: number, createdAt: string): Promise<void>;
-  /** Returns the ids of comments yoke has already posted on a PR. */
+  /** Returns the ids of comments Shipyard has already posted on a PR. */
   getPostedCommentIds?(pullRequestNumber: number): Promise<number[]>;
-  /** Persist the id of a comment yoke just posted on a PR. */
+  /** Persist the id of a comment Shipyard just posted on a PR. */
   recordPostedCommentId?(pullRequestNumber: number, commentId: number): Promise<void>;
 }
 
@@ -196,7 +196,7 @@ function findPullRequest(
 }
 
 /**
- * Fetches the human comments on a PR, excluding any comment yoke has
+ * Fetches the human comments on a PR, excluding any comment Shipyard has
  * itself posted (tracked by persisted comment id) and any comment already
  * marked read with a 👀 reaction — so a comment is addressed exactly once,
  * not re-read on every cycle.
@@ -213,7 +213,7 @@ async function fetchHumanComments(
 }
 
 /**
- * Posts a comment on a PR and persists its id so yoke never re-reads its
+ * Posts a comment on a PR and persists its id so Shipyard never re-reads its
  * own comment.
  */
 async function postAndRecordComment(
@@ -226,7 +226,7 @@ async function postAndRecordComment(
   await sessionStore.recordPostedCommentId?.(pullRequestNumber, commentId);
 }
 
-/** Adds the 👀 reaction to each comment, marking it as read by yoke. */
+/** Adds the 👀 reaction to each comment, marking it as read by Shipyard. */
 async function markCommentsAsRead(
   gitHubClient: ActionGitHubClient,
   comments: ReadonlyArray<{ id: number; kind?: string }>,
@@ -296,8 +296,8 @@ export async function approvePullRequest(
 
 /**
  * Record a dashboard approval on GitHub as well, with a comment on the PR —
- * GitHub will not let yoke's own token submit an approving review of a PR it
- * opened. The comment's id is kept so yoke never reads it back as feedback.
+ * GitHub will not let Shipyard's own token submit an approving review of a PR it
+ * opened. The comment's id is kept so Shipyard never reads it back as feedback.
  */
 export async function commentOnApproval(
   gitHubClient: Pick<ActionGitHubClient, "postComment">,
@@ -310,8 +310,8 @@ export async function commentOnApproval(
     sessionStore,
     pullRequestNumber,
     checksPending
-      ? "Approved on the yoke dashboard. Yoke will squash-merge this PR once its checks pass."
-      : "Approved on the yoke dashboard. Yoke is squash-merging this PR.",
+      ? "Approved on the Shipyard dashboard. Shipyard will squash-merge this PR once its checks pass."
+      : "Approved on the Shipyard dashboard. Shipyard is squash-merging this PR.",
   );
 }
 
@@ -383,7 +383,7 @@ export async function executeAction(
           issueBody: issue.body,
           baseBranch,
         });
-        // Every PR body yoke opens carries "Closes #N", incomplete ones
+        // Every PR body Shipyard opens carries "Closes #N", incomplete ones
         // included: that is the only wording GitHub acts on, and an incomplete
         // PR with no usable reference is worse than one that could be merged
         // early — the issue loses its link to the work entirely. An unfinished
@@ -414,7 +414,7 @@ export async function executeAction(
             );
           } catch (revertError) {
             console.warn(
-              `[yoke] Failed to revert issue #${issue.number} to "Ready" after implementation error: ${String(revertError)}`,
+              `[shipyard] Failed to revert issue #${issue.number} to "Ready" after implementation error: ${String(revertError)}`,
             );
           }
         }
@@ -440,7 +440,7 @@ export async function executeAction(
           await gitHubClient.addLabelsToPullRequest(created.number, [REVIEW_LABEL]);
         } catch (error) {
           console.warn(
-            `[yoke] Failed to copy the "${REVIEW_LABEL}" label onto PR #${created.number}: ${String(error)}`,
+            `[shipyard] Failed to copy the "${REVIEW_LABEL}" label onto PR #${created.number}: ${String(error)}`,
           );
         }
       }
@@ -466,7 +466,7 @@ export async function executeAction(
         // pushed and opened as a draft. Say so loudly: it needs a human, and it
         // must not be mistaken for a finished implementation.
         console.warn(
-          `[yoke] Issue #${issue.number}: opened PR #${created.number} as an INCOMPLETE draft — ` +
+          `[shipyard] Issue #${issue.number}: opened PR #${created.number} as an INCOMPLETE draft — ` +
             `the agent was interrupted (${implementation.failureReason?.split("\n")[0] ?? "unknown reason"}).`,
         );
         return { incompleteImplementation: true };
@@ -583,7 +583,7 @@ export async function executeAction(
             : "unknown duration";
         const thresholdMin = Math.round(CHECKS_TIMEOUT_MS / 60_000);
         console.log(
-          `[yoke] Cancelled ${cancelledCount} stalled workflow run(s) for PR #${pullRequest.number}: ` +
+          `[shipyard] Cancelled ${cancelledCount} stalled workflow run(s) for PR #${pullRequest.number}: ` +
           `still running more than ${thresholdMin} minutes after they started ` +
           `(oldest incomplete check started ${pendingDesc} ago).`,
         );
@@ -610,7 +610,7 @@ export async function executeAction(
       const checksNoCommits = update.headSha === pullRequest.headSha;
       if (checksNoCommits) {
         console.warn(
-          `[yoke] WARNING: address-failing-checks on PR #${pullRequest.number} ` +
+          `[shipyard] WARNING: address-failing-checks on PR #${pullRequest.number} ` +
           `completed but the branch HEAD SHA did not change (${pullRequest.headSha}). ` +
           `Claude ran but pushed no new commits. ` +
           `Failing checks that were sent to Claude: ${failingChecks.map((c) => c.name).join(", ") || "(none)"}`,
@@ -650,7 +650,7 @@ export async function executeAction(
       const conflictsNoCommits = update.headSha === pullRequest.headSha;
       if (conflictsNoCommits) {
         console.warn(
-          `[yoke] WARNING: resolve-conflicts on PR #${pullRequest.number} ` +
+          `[shipyard] WARNING: resolve-conflicts on PR #${pullRequest.number} ` +
           `completed but the branch HEAD SHA did not change (${pullRequest.headSha}). ` +
           `Claude ran but pushed no new commits.`,
         );

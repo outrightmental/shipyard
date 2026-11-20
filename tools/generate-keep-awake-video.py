@@ -9,7 +9,7 @@ buffoonery is visible rather than hidden offscreen.
 The encoded loops are committed to the repo (`src/dashboard/assets/`), so this
 script only has to be re-run when the lamp's look changes. It needs Pillow and
 GStreamer (`gst-launch-1.0` with the `vpx`, `x264`, `png` and `matroska`
-plugins); neither is a dependency of Yoke itself.
+plugins); neither is a dependency of Shipyard itself.
 
     python3 tools/generate-keep-awake-video.py
 """

@@ -1,7 +1,7 @@
 import './styles/global.css';
 import './styles/inbox.css';
 import './styles/drawer.css';
-import './components/shipyard-app.js';
+import './components/shipyard-dashboard.js';
 import { DashboardStore } from './store/dashboard-store.js';
 
 const store = new DashboardStore();

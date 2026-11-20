@@ -81,7 +81,7 @@ A line has at most one signal, worked out with its status in `workStatus`, so th
 | `approved` | turquoise, `--color-turquoise` | an approval going through: approved, and waiting for or undergoing its merge |
 | none | gray | merged; out of the queue; checks running; waiting for an engine; implementing; an approval sent and not yet answered; shut down |
 
-Red for an error, orange for a block and yellow for a PR awaiting review are the three the issue asked for (#286): the states the field most needs to be seen. Merged and manual are outcomes nobody has to act on here, so they stay neutral, as the issue asked too. Every further state was to take blue or turquoise next, and an approval going through is one: an approved PR waiting for its merge is worth a glance — your press took, and the merge is coming — but it is not merged yet, and is not an alarm.
+Red for an error, orange for a block and yellow for a PR awaiting review are the three the issue asked for (#286): the states the field most needs to be seen. A merged PR is an outcome nobody has to act on here, so it stays neutral, as the issue asked too; a `manual` PR, though, is blocked on a person and so takes orange like any other block (#21), no longer listed in the inbox. Every further state was to take blue or turquoise next, and an approval going through is one: an approved PR waiting for its merge is worth a glance — your press took, and the merge is coming — but it is not merged yet, and is not an alarm.
 
 So it takes turquoise, a token of its own (`--color-turquoise`), and not the green the dashboard used for it before. Why turquoise, and why not green:
 

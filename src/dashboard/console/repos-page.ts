@@ -1,5 +1,5 @@
 import { LitElement, html, nothing } from 'lit';
-import type { AvailableRepo, GitHubStatus, SubscribedRepo } from '../../shared/protocol.js';
+import type { AvailableRepo, EngineDefaults, GitHubStatus, RepoSettings, SubscribedRepo } from '../../shared/protocol.js';
 import { formatClockTime } from '../shared/format.js';
 import { errorLine, type Api } from './api.js';
 import type { ConsoleView, FleetStore } from './fleet-store.js';
@@ -112,6 +112,8 @@ interface Drawn {
   github: GitHubStatus;
   repos: readonly SubscribedRepo[];
   members: readonly MemberName[];
+  /** Platform-wide engine defaults; empty when drawn from kept state. */
+  engineDefaults: EngineDefaults;
   /** The store has read the fleet: this is how things are, not how they were. */
   settled: boolean;
 }
@@ -171,6 +173,7 @@ export class ShipyardRepos extends LitElement {
     _error: { state: true },
     _org: { state: true },
     _filter: { state: true },
+    _expanded: { state: true },
   };
 
   store: FleetStore | null = null;
@@ -185,6 +188,8 @@ export class ShipyardRepos extends LitElement {
   private _org = DEFAULT_ORG;
   private _filter = '';
   private _unsub: (() => void) | null = null;
+  /** Repos whose settings panel is expanded, by "owner/repo". */
+  private _expanded = new Set<string>();
 
   protected override createRenderRoot() { return this; }
 
@@ -213,9 +218,9 @@ export class ShipyardRepos extends LitElement {
 
   private _drawn(): Drawn | null {
     const view = this._view;
-    if (view?.loaded) return { github: view.github, repos: view.repos, members: view.members, settled: true };
+    if (view?.loaded) return { github: view.github, repos: view.repos, members: view.members, settled: true, engineDefaults: view.engineDefaults };
     const kept = this._kept;
-    return kept ? { github: kept.github, repos: kept.repos, members: kept.members, settled: false } : null;
+    return kept ? { github: kept.github, repos: kept.repos, members: kept.members, settled: false, engineDefaults: {} } : null;
   }
 
   /**
@@ -353,6 +358,29 @@ export class ShipyardRepos extends LitElement {
       </section>`;
   }
 
+  // ── Engine defaults ─────────────────────────────────────────────────────────
+
+  private _engineDefaultsCard(drawn: Drawn) {
+    const off = !drawn.settled;
+    const busy = this._busy === 'engine-defaults' || off;
+    const d = drawn.engineDefaults;
+    return html`
+      <section class="console-card" aria-label="Engine defaults">
+        <header class="console-card-head"><h2>Engine defaults</h2></header>
+        <p class="console-note">
+          Platform-wide model and effort for each development phase. Per-repository settings override these; a
+          machine's own <code>~/.shipyard/env.yaml</code> overrides both.
+        </p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem">
+          ${this._modelInput('Initial model', d.initialModel, (v) => this._saveEngineDefaults(drawn, 'initialModel', v), busy)}
+          ${this._modelInput('Review model', d.reviewModel, (v) => this._saveEngineDefaults(drawn, 'reviewModel', v), busy)}
+          ${this._effortSelect('Initial effort', d.initialEffort, (v) => this._saveEngineDefaults(drawn, 'initialEffort', v), busy)}
+          ${this._effortSelect('Review effort', d.reviewEffort, (v) => this._saveEngineDefaults(drawn, 'reviewEffort', v), busy)}
+          ${this._modelInput('Describe model', d.describeModel, (v) => this._saveEngineDefaults(drawn, 'describeModel', v), busy)}
+        </div>
+      </section>`;
+  }
+
   // ── Repositories ───────────────────────────────────────────────────────────
 
   private _path(repo: string): string {
@@ -375,6 +403,50 @@ export class ShipyardRepos extends LitElement {
     void this._run(`repo:${row.repo}`, () => this.api!.put(this._path(row.repo), { memberId }));
   }
 
+  private _saveRepoSettings(row: RepoRow, field: keyof RepoSettings, value: string | undefined) {
+    const current = row.subscribed?.settings ?? {};
+    const next: Record<string, unknown> = { ...current };
+    if (value !== undefined) next[field] = value;
+    else delete next[field];
+    void this._run(`repo:${row.repo}`, () => this.api!.put(this._path(row.repo), { settings: next }));
+  }
+
+  private _saveEngineDefaults(drawn: Drawn, field: keyof EngineDefaults, value: string | undefined) {
+    const next: Record<string, unknown> = { ...drawn.engineDefaults };
+    if (value !== undefined && value !== '') next[field] = value;
+    else delete next[field];
+    void this._run('engine-defaults', () => this.api!.put('/engine-defaults', next));
+  }
+
+  private _modelInput(label: string, value: string | undefined, onChange: (v: string | undefined) => void, busy: boolean) {
+    return html`
+      <label class="console-field">
+        <span>${label}</span>
+        <input
+          class="console-input" type="text" placeholder="platform default" autocomplete="off" spellcheck="false"
+          ?disabled=${busy}
+          .value=${value ?? ''}
+          @change=${(e: Event) => { const v = (e.target as HTMLInputElement).value.trim(); onChange(v || undefined); }}
+        >
+      </label>`;
+  }
+
+  private _effortSelect(label: string, value: string | undefined, onChange: (v: string | undefined) => void, busy: boolean) {
+    return html`
+      <label class="console-field">
+        <span>${label}</span>
+        <select
+          class="console-input"
+          ?disabled=${busy}
+          .value=${value ?? ''}
+          @change=${(e: Event) => { const v = (e.target as HTMLSelectElement).value; onChange(v || undefined); }}
+        >
+          <option value="">platform default</option>
+          ${['low', 'medium', 'high', 'xhigh', 'max'].map((e) => html`<option value="${e}" ?selected=${value === e}>${e}</option>`)}
+        </select>
+      </label>`;
+  }
+
   private _row(row: RepoRow, drawn: Drawn) {
     const { subscribed, available } = row;
     const { members } = drawn;
@@ -387,6 +459,8 @@ export class ShipyardRepos extends LitElement {
     const assigned = subscribed?.memberId ?? '';
     // Assigned to a member that has since been retired is assigned to no one.
     const orphaned = assigned !== '' && !members.some((member) => member.id === assigned);
+    const expanded = subscribed !== null && this._expanded.has(row.repo);
+    const s = subscribed?.settings ?? {};
     return html`
       <tr class="${subscribed ? 'is-subscribed' : ''}" aria-busy="${active ? 'true' : 'false'}">
         <td>
@@ -398,6 +472,22 @@ export class ShipyardRepos extends LitElement {
             ? html`<span class="console-tag is-down" title="The GitHub App's installation does not include this repository, so no fleet member can be given a token for it">not visible to the app</span>`
             : nothing}
           ${available?.description ? html`<div class="console-faint">${available.description}</div>` : nothing}
+          ${subscribed
+            ? html`<div>
+                <button
+                  class="console-button is-quiet" type="button" style="margin-top:0.25rem"
+                  @click=${() => { if (expanded) this._expanded.delete(row.repo); else this._expanded.add(row.repo); this.requestUpdate(); }}
+                >${expanded ? 'Hide settings' : 'Settings'}</button>
+              </div>`
+            : nothing}
+          ${expanded ? html`
+            <div class="console-repo-settings" style="margin-top:0.5rem;display:grid;grid-template-columns:1fr 1fr;gap:0.5rem">
+              ${this._modelInput('Initial model', s.initialModel, (v) => this._saveRepoSettings(row, 'initialModel', v), busy)}
+              ${this._modelInput('Review model', s.reviewModel, (v) => this._saveRepoSettings(row, 'reviewModel', v), busy)}
+              ${this._effortSelect('Initial effort', s.initialEffort, (v) => this._saveRepoSettings(row, 'initialEffort', v), busy)}
+              ${this._effortSelect('Review effort', s.reviewEffort, (v) => this._saveRepoSettings(row, 'reviewEffort', v), busy)}
+              ${this._modelInput('Describe model', s.describeModel, (v) => this._saveRepoSettings(row, 'describeModel', v), busy)}
+            </div>` : nothing}
         </td>
         <td>
           ${subscribed
@@ -506,6 +596,7 @@ export class ShipyardRepos extends LitElement {
           : nothing}
         ${this._error ? html`<p class="console-banner" role="alert">${this._error}</p>` : nothing}
         ${this._github(drawn)}
+        ${this._engineDefaultsCard(drawn)}
         ${drawn.github.connected ? this._repositories(drawn) : nothing}
       </div>`;
   }

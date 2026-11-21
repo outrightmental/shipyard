@@ -198,3 +198,5 @@ npm run demo:dashboard
 **The platform on a local port**, with its table in memory, is `startLocalPlatform` in `src/platform/local.ts`. The fleet member's tests run a real member against it, over real HTTP and a real socket.
 
 **The engine by hand**, on one machine from an `env.yaml`, still works exactly as [its README](design/ENGINE.md) says: `npm run dev`.
+
+The engine under `src/*.ts` is kept close to its `upstream` remote on purpose, so its improvements still merge.

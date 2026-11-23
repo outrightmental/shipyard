@@ -2,7 +2,7 @@ import { LitElement, html } from 'lit';
 import { repeat } from 'lit/directives/repeat.js';
 import type { Point } from '../field/geometry.js';
 import { INSPECTOR_CARD_ID } from '../field/model.js';
-import { cardsToShield, hasNewQueuedApproval, queuedApprovalIds, type InboxAction, type InboxCard, type InboxLink, type Inspection } from '../shared/inbox.js';
+import { cardsToShield, type InboxAction, type InboxCard, type InboxLink, type Inspection } from '../shared/inbox.js';
 import type { ApproveTarget } from '../shared/pill-approval.js';
 
 /**
@@ -46,9 +46,7 @@ export class ShipyardInbox extends LitElement {
   /** Whether the open rail lies over the field, as on a narrow screen, rather than beside it. */
   overlay = false;
   logOpen = false;
-  /** A screen that takes no decisions (a fleet member's read-only dashboard).
-   *  The scroll-to-top on a newly queued approval is for the main console only
-   *  (#18); a read-only viewer's column is never moved out from under them. */
+  /** A screen that takes no decisions (a fleet member's read-only dashboard). */
   readOnly = false;
 
   /** Where each card sat when last drawn, and until when its button is deaf. */
@@ -56,10 +54,6 @@ export class ShipyardInbox extends LitElement {
   private _shieldUntil = new Map<string, number>();
   private _anchorsKey = '';
   private _resizeObserver: ResizeObserver | null = null;
-  /** The ids of the "Approval queued" cards in the previous render, so a card
-   *  that becomes queued (idle → queued, keeping its id) can be told from one
-   *  that already was and the list scrolled to it only when it is new. */
-  private _prevQueuedIds = new Set<string>();
 
   protected override createRenderRoot() { return this; }
 
@@ -78,10 +72,6 @@ export class ShipyardInbox extends LitElement {
     this._shieldMoved();
     this._reportAnchors();
     if (changed.has('selectedCardId') && this.selectedCardId) this._reveal(this.selectedCardId);
-    if (changed.has('cards')) {
-      if (!this.readOnly && hasNewQueuedApproval(this._prevQueuedIds, this.cards)) this._scrollToTop();
-      this._prevQueuedIds = new Set(queuedApprovalIds(this.cards));
-    }
   }
 
   /**
@@ -99,27 +89,6 @@ export class ShipyardInbox extends LitElement {
     if (top < list.scrollTop) target = top - 8;
     else if (bottom > list.scrollTop + list.clientHeight) target = bottom - list.clientHeight + 8;
     if (target !== list.scrollTop) list.scrollTo({ top: Math.max(0, target), behavior: 'smooth' });
-  }
-
-  /** Scroll the list to the top so a newly pinned card is immediately visible.
-   *  Only the list scrolls — the page itself must never move. The jump is
-   *  instant, not animated (#18): a card one press away from merging a pull
-   *  request must be under the eye at once, not slid up to over a moment.
-   *
-   *  The jump slides every card under wherever a finger already was. The move
-   *  shield keys off layout position, which a scroll leaves unchanged, so it
-   *  does not catch this on its own — a card that merely stayed put while the
-   *  list scrolled is not seen as having moved. Shield the whole list for a
-   *  moment so no button a scroll has just slid under a finger takes that press
-   *  (#278, #18). */
-  private _scrollToTop() {
-    const list = this.querySelector<HTMLElement>('.inbox-list');
-    if (!list || list.scrollTop <= 0) return;
-    list.scrollTo({ top: 0, behavior: 'instant' });
-    const until = performance.now() + TAP_SHIELD_MS;
-    for (const element of list.querySelectorAll<HTMLElement>('[data-card]')) {
-      this._shieldUntil.set(element.dataset['card']!, until);
-    }
   }
 
   /** Make the button of every card that has just arrived or moved deaf for a moment. */

@@ -343,33 +343,10 @@ export interface InboxInput {
   failureShowMs: number;
 }
 
-/** Whether a card is "Approval queued" — approved and waiting for a free
- *  engine — which pins it to the very top of the list. */
-function isPinnedCard(card: InboxCard): boolean {
-  return card.action?.type === 'approve' && card.action.step === 'queued';
-}
-
-/** The ids of every "Approval queued" card in `cards`. */
-export function queuedApprovalIds(cards: InboxCard[]): string[] {
-  return cards.filter(isPinnedCard).map((c) => c.id);
-}
-
 /**
- * Whether any card in `cards` is newly queued — i.e. it is an "Approval
- * queued" card whose id was not already in `prevQueuedIds`. Used by the inbox
- * component to decide whether to scroll to the top (#18).
- */
-export function hasNewQueuedApproval(prevQueuedIds: Set<string>, cards: InboxCard[]): boolean {
-  return cards.some((card) => isPinnedCard(card) && !prevQueuedIds.has(card.id));
-}
-
-/**
- * The inbox's cards, top to bottom.
- *
- * "Approval queued" cards (an approval given, waiting for a free engine) sort
- * above everything else regardless of source or arrival time. The existing
- * ordering — by source rank, then arrival time, then id — applies to all other
- * cards unchanged.
+ * The inbox's cards, top to bottom, ordered by source rank, then arrival time,
+ * then id. The order never changes when a card's step changes (e.g. idle →
+ * queued on approval): approved cards stay where they were pressed (#36).
  */
 export function buildInbox(input: InboxInput): InboxCard[] {
   const { works, arrivals } = input;
@@ -384,13 +361,12 @@ export function buildInbox(input: InboxInput): InboxCard[] {
     .filter((card) => !card.dismissible || !input.dismissed.has(card.id))
     .map((card) => (input.readOnly ? readOnlyCard(card) : card));
 
-  const pinned = (card: InboxCard): 0 | 1 => isPinnedCard(card) ? 0 : 1;
   const rank = (card: InboxCard): number => INBOX_SOURCES.indexOf(card.source);
   // Within the fleet source, repo-unassigned cards sink below all other fleet cards.
   const fleetSubrank = (card: InboxCard): 0 | 1 => card.id.startsWith('fleet:repo-unassigned:') ? 1 : 0;
   const arrived = (card: InboxCard): number => arrivals.get(card.id) ?? Number.MAX_SAFE_INTEGER;
   return cards.sort((a, b) =>
-    pinned(a) - pinned(b) || rank(a) - rank(b) || fleetSubrank(a) - fleetSubrank(b) || arrived(a) - arrived(b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    rank(a) - rank(b) || fleetSubrank(a) - fleetSubrank(b) || arrived(a) - arrived(b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
 /**
